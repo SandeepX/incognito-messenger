@@ -33,7 +33,7 @@
 
             <div class="me-card">
                 <button id="me-note-avatar" class="avatar-note-trigger" type="button" title="Leave a note" aria-label="Leave a note">
-                    <img id="me-avatar" class="avatar" src="{{ $me->avatarUrl() }}" alt="Your avatar">
+                    <img id="me-avatar" class="avatar" src="{{ $me->avatarUrl() }}" alt="{{ $me->name }}'s avatar" data-name="{{ $me->name }}">
                     <span id="me-note-bubble" class="me-note-bubble">+ Note</span>
                 </button>
                 <div class="who">

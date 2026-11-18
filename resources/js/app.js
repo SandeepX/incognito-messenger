@@ -64,6 +64,36 @@ const debounce = (fn, ms) => {
     };
 };
 
+/* A broken avatar must never render its raw alt text. Swap it for a stable,
+   coloured circle derived from the person's name instead. */
+function avatarFallbackSrc(name) {
+    const raw = String(name ?? '').trim();
+    const initial = (Array.from(raw)[0] ?? '?').toUpperCase().replace(/[<>&"']/g, '');
+    const palette = ['#0ea5e9', '#8b5cf6', '#f97316', '#10b981', '#e11d48', '#6366f1', '#14b8a6', '#f59e0b'];
+    let hash = 0;
+    for (const char of raw) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
+    const color = palette[hash % palette.length];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" rx="48" fill="${color}"/><text x="48" y="61" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="44" font-weight="600" fill="#fff">${initial}</text></svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function applyAvatarFallback(img) {
+    if (img.src.startsWith('data:image/svg+xml')) return;
+    const rowName = img.closest('.conv-item, .msg-row, .member-row, .note-card, .search-results button')
+        ?.querySelector('.conv-name, .who strong, strong')?.textContent?.trim();
+    const name = img.dataset.name || img.alt || rowName || state.me.name || '?';
+    img.dataset.name = name;
+    img.src = avatarFallbackSrc(name);
+}
+
+// Image error events do not bubble, so listen in the capture phase.
+document.addEventListener('error', (event) => {
+    const img = event.target;
+    if (img instanceof HTMLImageElement && img.classList.contains('avatar')) {
+        applyAvatarFallback(img);
+    }
+}, true);
+
 async function api(url, options = {}) {
     const { headers = {}, ...rest } = options;
 
@@ -266,8 +296,9 @@ function noteCloudHtml(note, size = '') {
     </span>`;
 }
 
-function avatarWithNote(avatar, note, size = '') {
-    return `<span class="avatar-wrap">${noteCloudHtml(note, size)}<img class="avatar${size ? ' '+size : ''}" src="${esc(avatar)}" alt=""></span>`;
+function avatarWithNote(avatar, note, size = '', name = '') {
+    const label = name ? `${name}'s avatar` : 'Avatar';
+    return `<span class="avatar-wrap">${noteCloudHtml(note, size)}<img class="avatar${size ? ' '+size : ''}" src="${esc(avatar)}" alt="${esc(label)}" data-name="${esc(name)}"></span>`;
 }
 
 function applyUnreadCounts(counts) {
@@ -473,7 +504,7 @@ function renderConversationList() {
 
         return `
             <li class="conv-item ${state.active?.id === c.id ? 'active' : ''}" data-id="${c.id}">
-                ${avatarWithNote(c.avatar, c.note)}
+                ${avatarWithNote(c.avatar, c.note, '', c.name)}
                 <div class="body">
                     <div class="conv-row">
                         <span class="conv-name">${presence.dot}${esc(c.name)}${presence.label ? `<span class="conv-presence">${esc(presence.label)}</span>` : ''}</span>
@@ -513,7 +544,7 @@ function renderUserResults(users, container, onPick) {
         const button = document.createElement('button');
         button.type = 'button';
         button.innerHTML = `
-            ${avatarWithNote(user.avatar, user.note, 'sm')}
+            ${avatarWithNote(user.avatar, user.note, 'sm', user.name)}
             <span class="who"><strong>${esc(user.name)}</strong><small>@${esc(user.username)}</small></span>`;
         button.addEventListener('click', () => onPick(user));
         container.appendChild(button);
@@ -568,6 +599,7 @@ function updateChatHeader() {
     $('chat-subtitle').innerHTML = state.active.type === 'group'
         ? esc(state.active.subtitle ?? 'Group conversation')
         : `<span class="status-dot ${presence.online ? 'online' : ''}"></span>${esc(presence.label || 'Offline')}`;
+    $('chat-avatar').dataset.name = state.active.name ?? '';
     $('chat-avatar').src = state.active.avatar ?? '/images/default-avatar.svg';
 
     const note = state.active.type === 'direct' ? state.active.note : null;
@@ -613,7 +645,7 @@ function buildMessageRow(message) {
     row.className = `msg-row ${mine ? 'mine' : 'theirs'}`;
     row.dataset.id = message.id ?? '';
     row.innerHTML = `
-        <img class="avatar sm" src="${esc(message.sender_avatar)}" alt="">
+        <img class="avatar sm" src="${esc(message.sender_avatar)}" alt="${esc(message.sender_name)}'s avatar" data-name="${esc(message.sender_name)}">
         <div>
             ${unsent
                 ? `<div class="unsent-bubble">${esc(unsentPreview(message))}</div>`
@@ -1031,7 +1063,7 @@ function renderGroupMemberChoices(users) {
         row.className = 'member-row';
         const selected = state.selectedMembers.has(user.id);
         row.innerHTML = `
-            ${avatarWithNote(user.avatar, user.note, 'sm')}
+            ${avatarWithNote(user.avatar, user.note, 'sm', user.name)}
             <span class="who">${esc(user.name)}<small>@${esc(user.username)}</small></span>
             <button type="button" class="btn ${selected ? 'primary' : ''}" data-id="${user.id}">${selected ? '✓ Added' : 'Add'}</button>`;
         row.querySelector('button').addEventListener('click', (event) => {
@@ -1121,7 +1153,7 @@ async function loadGroupSettings(groupId) {
 
         $('settings-members').innerHTML = group.members.map((member) => `
             <div class="member-row">
-                <img class="avatar sm" src="${esc(member.avatar)}" alt="">
+                <img class="avatar sm" src="${esc(member.avatar)}" alt="${esc(member.name)}'s avatar" data-name="${esc(member.name)}">
                 <span class="who">${esc(member.name)}<small>@${esc(member.username)} · ${esc(member.role)}</small></span>
                 ${group.is_admin && member.id !== group.creator_id
                     ? `<button class="btn danger" type="button" data-remove="${member.id}">Remove</button>` : ''}
@@ -1305,7 +1337,7 @@ function renderNotes() {
     state.notes.filter((note) => ! note.is_mine).forEach((note) => {
         cards.push(`<div class="note-card" data-note="${note.id}" title="Open chat with ${esc(note.user.name)}">
             <div class="note-cloud">
-                <img class="avatar" src="${esc(note.user.avatar)}" alt="">
+                <img class="avatar" src="${esc(note.user.avatar)}" alt="${esc(note.user.name)}'s avatar" data-name="${esc(note.user.name)}">
                 <span class="note-text">${esc(note.content)}</span>
             </div>
         </div>`);
@@ -1335,7 +1367,7 @@ function openNoteViewer(note) {
     $('note-save-btn').hidden = true;
     $('note-author').hidden = false;
     $('note-author').innerHTML = `
-        <img class="avatar sm" src="${esc(note.user.avatar)}" alt="">
+        <img class="avatar sm" src="${esc(note.user.avatar)}" alt="${esc(note.user.name)}'s avatar" data-name="${esc(note.user.name)}">
         <span class="who">${esc(note.user.name)}<small>@${esc(note.user.username)} · ${esc(note.time ?? '')}</small></span>`;
     $('note-modal').classList.add('show');
 }
@@ -1450,7 +1482,7 @@ async function loadFriends() {
             const presence = presenceInfo(friend.id);
             return `
             <li class="conv-item" data-friend="${friend.id}" title="Open chat with ${esc(friend.name)}">
-                ${avatarWithNote(friend.avatar, friend.note)}
+                ${avatarWithNote(friend.avatar, friend.note, '', friend.name)}
                 <div class="body">
                     <div class="conv-row">
                         <span class="conv-name">${esc(friend.name)}</span>
@@ -1470,7 +1502,7 @@ async function loadFriends() {
         const incoming = data.incoming?.data ?? [];
         $('friend-request-list').innerHTML = incoming.length ? incoming.map((item) => `
             <li class="conv-item">
-                ${avatarWithNote(item.user.avatar, item.user.note)}
+                ${avatarWithNote(item.user.avatar, item.user.note, '', item.user.name)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span>
                         <span class="conv-time">${esc(formatShortTime(item.created_at))}</span></div>
@@ -1487,7 +1519,7 @@ async function loadFriends() {
         const outgoing = data.outgoing?.data ?? [];
         $('friend-sent-list').innerHTML = outgoing.length ? outgoing.map((item) => `
             <li class="conv-item">
-                ${avatarWithNote(item.user.avatar, item.user.note)}
+                ${avatarWithNote(item.user.avatar, item.user.note, '', item.user.name)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span></div>
                     <div class="conv-bottom">
@@ -1618,7 +1650,7 @@ async function loadMessageRequests() {
 
         $('message-request-list').innerHTML = data.incoming?.data?.length ? data.incoming.data.map((item) => `
             <li class="conv-item" data-request="${item.id}">
-                ${avatarWithNote(item.user.avatar, item.user.note)}
+                ${avatarWithNote(item.user.avatar, item.user.note, '', item.user.name)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span>
                         <span class="conv-time">${esc(formatShortTime(item.created_at))}</span></div>
@@ -1628,7 +1660,7 @@ async function loadMessageRequests() {
 
         $('message-sent-list').innerHTML = data.sent?.data?.length ? data.sent.data.map((item) => `
             <li class="conv-item" data-request="${item.id}">
-                ${avatarWithNote(item.user.avatar, item.user.note)}
+                ${avatarWithNote(item.user.avatar, item.user.note, '', item.user.name)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span></div>
                     <div class="conv-bottom"><span class="conv-preview">${esc(item.preview)}</span></div>
@@ -1643,7 +1675,7 @@ function openRequestComposer(user) {
     state.currentRequest = { mode: 'new', user };
     $('request-details').innerHTML = `
         <div class="member-row">
-            ${avatarWithNote(user.avatar, user.note)}
+            ${avatarWithNote(user.avatar, user.note, '', user.name)}
             <span class="who">${esc(user.name)}<small>@${esc(user.username)}</small></span>
         </div>
         <p class="muted">You are not friends yet. Send a short message request — they can accept it to start a normal chat.</p>`;
@@ -1666,7 +1698,7 @@ async function openRequestPreview(id) {
 
         $('request-details').innerHTML = `
             <div class="member-row">
-                ${avatarWithNote(request.user.avatar, request.user.note)}
+                ${avatarWithNote(request.user.avatar, request.user.note, '', request.user.name)}
                 <span class="who">${esc(request.user.name)}
                     <small>@${esc(request.user.username)}${request.user.bio ? ' · ' + esc(request.user.bio) : ''}</small></span>
             </div>

@@ -54,6 +54,13 @@ class AttachmentTest extends TestCase
         $first = $attachments->first();
         $this->actingAs($bob)->followingRedirects()->get($first->payload()['download_url'])->assertOk();
         $this->actingAs($eve)->get($first->payload()['download_url'])->assertForbidden();
+
+        // Previews stream from the app origin; the browser never talks to MinIO.
+        $preview = $this->actingAs($bob)->get($first->payload()['preview_url']);
+        $preview->assertOk();
+        $this->assertSame('image/png', $preview->headers->get('Content-Type'));
+        $this->assertSame('inline', $preview->headers->get('Content-Disposition'));
+        $this->assertNull($preview->headers->get('Location'));
     }
 
     public function test_invalid_attachment_types_and_oversized_files_are_rejected(): void

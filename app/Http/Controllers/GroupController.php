@@ -75,27 +75,35 @@ class GroupController extends Controller
             ? $request->file('avatar')->store('avatars', 'minio')
             : null;
 
-        $group = DB::transaction(function () use ($data, $me, $memberIds, $avatarPath) {
-            $group = Group::create([
-                'name' => $data['name'],
-                'description' => $data['description'] ?? null,
-                'avatar_path' => $avatarPath,
-                'creator_id' => $me,
-            ]);
+        try {
+            $group = DB::transaction(function () use ($data, $me, $memberIds, $avatarPath) {
+                $group = Group::create([
+                    'name' => $data['name'],
+                    'description' => $data['description'] ?? null,
+                    'avatar_path' => $avatarPath,
+                    'creator_id' => $me,
+                ]);
 
-            $conversation = Conversation::create([
-                'type' => 'group',
-                'group_id' => $group->id,
-            ]);
+                $conversation = Conversation::create([
+                    'type' => 'group',
+                    'group_id' => $group->id,
+                ]);
 
-            $group->members()->attach($me, ['role' => 'admin']);
-            foreach ($memberIds as $id) {
-                $group->members()->attach($id, ['role' => 'member']);
+                $group->members()->attach($me, ['role' => 'admin']);
+                foreach ($memberIds as $id) {
+                    $group->members()->attach($id, ['role' => 'member']);
+                }
+                $conversation->participants()->attach(array_merge([$me], $memberIds));
+
+                return $group;
+            });
+        } catch (\Throwable $e) {
+            if ($avatarPath) {
+                Storage::disk('minio')->delete($avatarPath);
             }
-            $conversation->participants()->attach(array_merge([$me], $memberIds));
 
-            return $group;
-        });
+            throw $e;
+        }
 
         return response()->json([
             'id' => $group->id,
@@ -113,16 +121,30 @@ class GroupController extends Controller
             'avatar' => AvatarUpload::rules(false),
         ], AvatarUpload::messages());
 
+        $oldAvatar = $group->avatar_path;
+        $newAvatar = null;
+
         if ($request->hasFile('avatar')) {
-            if ($group->avatar_path) {
-                Storage::disk('minio')->delete($group->avatar_path);
-            }
-            $group->avatar_path = $request->file('avatar')->store('avatars', 'minio');
+            $newAvatar = $request->file('avatar')->store('avatars', 'minio');
+            $group->avatar_path = $newAvatar;
         }
 
         $group->name = $data['name'];
         $group->description = $data['description'] ?? null;
-        $group->save();
+
+        try {
+            $group->save();
+        } catch (\Throwable $e) {
+            if ($newAvatar) {
+                Storage::disk('minio')->delete($newAvatar);
+            }
+
+            throw $e;
+        }
+
+        if ($newAvatar && $oldAvatar && $oldAvatar !== $newAvatar) {
+            Storage::disk('minio')->delete($oldAvatar);
+        }
 
         broadcast(new GroupUpdated($group->load('conversation'), 'details'));
 

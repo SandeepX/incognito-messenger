@@ -60,13 +60,21 @@ class ProfileController extends Controller
             'username' => $request->user()->username,
         ]);
 
+        $oldPath = $profile->avatar_path;
         $path = $request->file('avatar')->store('avatars', 'minio');
 
-        if ($profile->avatar_path) {
-            Storage::disk('minio')->delete($profile->avatar_path);
+        try {
+            // Persist the new path first: a failed DB write must never leave
+            // the profile pointing at a file we have already deleted.
+            $profile->update(['avatar_path' => $path]);
+        } catch (\Throwable $e) {
+            Storage::disk('minio')->delete($path);
+            throw $e;
         }
 
-        $profile->update(['avatar_path' => $path]);
+        if ($oldPath && $oldPath !== $path) {
+            Storage::disk('minio')->delete($oldPath);
+        }
 
         return back()->with('status', 'Profile picture updated.');
     }

@@ -12,7 +12,7 @@ A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel E
 - **Last-active presence** — green dot for “Active now”, relative text for recent visits, nothing after seven days. A 30-second heartbeat and socket connect/disconnect events persist `users.last_active_at`; the **Show active status** profile toggle hides both presence and the timestamp.
 - **Message sounds** — optional, on by default. A subtle tone plays for incoming messages (not for the focused chat, background-safe and deduplicated against your own socket echo) and a quieter one on successful send. Toggle it in **Profile → Message sounds**.
 - **Unsend** — sender-only. Unseen messages become a shared “unsent a message” placeholder on both sides; seen messages are removed only from the sender’s view. The server decides at request time from `message_reads`, and Reverb pushes the decision immediately.
-- **Private media & files** — images (JPEG/PNG/GIF/WebP) and documents (PDF, Word, Excel, TXT, CSV, ZIP) up to 20 MB each, max 5 per message. Everything is stored in a private MinIO bucket with generated names. Download/preview URLs are signed, expire after 5 minutes, and are generated only after a policy check.
+- **Private media & files** — images (JPEG/PNG/GIF/WebP) and documents (PDF, Word, Excel, TXT, CSV, ZIP) up to 20 MB each, max 5 per message. Everything is stored in a private MinIO bucket with generated names. Download/preview links are authorized by policy and stream through the app, so they work from localhost, a LAN address or a tunnel without exposing MinIO to the browser.
 - **Notes** — one active 60-character note per user, shown as a thought cloud in the notes strip and above avatars in Friends and Chats. Notes are visible only to the author and accepted friends, disappear after 24 hours, and can be edited or deleted anytime. Clicking a friend's note opens their chat.
 - **Realtime** — new messages, read receipts, friend/message request events, accepts, notes, unread counts, conversation-list changes and group changes are pushed over Reverb. Request and notification counters update without a refresh.
 - **Authorization** — policies plus `routes/channels.php` decide who may read, write, download or subscribe. Channel authorization is re-checked live for groups, so removed members lose access immediately.
@@ -82,7 +82,7 @@ MINIO_USE_SSL=false
 MINIO_URL=http://localhost:19000
 ```
 
-`MINIO_ENDPOINT` is the server-to-server address used inside Docker (`http://minio:9000`); `MINIO_URL` is the browser-visible **origin only** (no bucket path) used to sign temporary URLs. The `minio-public` disk reuses the same bucket but signs with that public origin so links work from the browser. Never put `MINIO_SECRET_KEY` in a `VITE_*` variable.
+`MINIO_ENDPOINT` is the server-to-server address used inside Docker (`http://minio:9000`); `MINIO_URL` is the optional browser-visible origin for the signed-URL disk. The browser never needs it: avatars and attachment previews are served through Laravel routes, so only the app's origin matters. Never put `MINIO_SECRET_KEY` in a `VITE_*` variable.
 
 ## API overview
 
@@ -164,4 +164,4 @@ Tests cover registration/login, profile and avatar validation, direct-chat priva
 - Events use `ShouldBroadcastNow` so delivery is immediate without a queue worker. For high traffic, switch to `ShouldBroadcast` and run `php artisan queue:work`.
 - Typing indicators are whispers: browser → Reverb → other browsers. They never reach Laravel and are throttled in the client.
 - The WebSocket key is baked into the JS bundle at build time; changing `REVERB_APP_KEY` requires `docker compose build`.
-- Avatar uploads are capped at 10 MB and message attachments at 20 MB; nginx and PHP are configured for 28 MB request bodies so multipart overhead does not truncate valid uploads.
+- Avatar uploads are capped at 10 MB and message attachments at 20 MB each (5 per message). PHP allows 25 MB per file and 110 MB per request, and nginx allows 110 MB request bodies, so Laravel validates every file before PHP or nginx can truncate a valid batch.

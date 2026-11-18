@@ -6,8 +6,30 @@
     <h2>Edit profile</h2>
 
     <div style="text-align:center;margin-bottom:18px">
-        <img src="{{ $user->avatarUrl() }}" alt="Your avatar" style="width:80px;height:80px;border-radius:50%;object-fit:cover">
+        <img id="profile-avatar" src="{{ $user->avatarUrl() }}" alt="{{ $user->name }}'s avatar"
+             data-name="{{ $user->name }}" style="width:80px;height:80px;border-radius:50%;object-fit:cover">
     </div>
+
+    <script>
+        // Keep a useful avatar even when the image file is missing or broken.
+        (function () {
+            const img = document.getElementById('profile-avatar');
+            const fallback = () => {
+                if (img.dataset.fallback) return;
+                img.dataset.fallback = '1';
+                const name = (img.dataset.name || img.alt || '?').trim();
+                const initial = (name[0] || '?').toUpperCase().replace(/[<>&"']/g, '');
+                const colors = ['#0ea5e9', '#8b5cf6', '#f97316', '#10b981', '#e11d48', '#6366f1', '#14b8a6', '#f59e0b'];
+                let hash = 0;
+                for (const char of name) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
+                const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" rx="48" fill="${colors[hash % colors.length]}"/><text x="48" y="61" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="44" font-weight="600" fill="#fff">${initial}</text></svg>`;
+                img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+            };
+
+            img.addEventListener('error', fallback);
+            if (img.complete && img.naturalWidth === 0) fallback();
+        })();
+    </script>
 
     <form method="POST" action="{{ route('profile.avatar') }}" enctype="multipart/form-data">
         @csrf
