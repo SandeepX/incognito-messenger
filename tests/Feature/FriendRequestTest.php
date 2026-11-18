@@ -71,6 +71,50 @@ class FriendRequestTest extends TestCase
         $this->assertDatabaseCount('friendships', 0);
     }
 
+    public function test_request_notes_are_optional_and_visible_to_both_sides(): void
+    {
+        $alice = $this->userWithProfile('alice');
+        $bob = $this->userWithProfile('bob');
+
+        $this->actingAs($alice)->postJson('/api/friends', [
+            'user_id' => $bob->id,
+            'note' => 'Hey Bob, it is Alice!',
+        ])->assertCreated()->assertJsonPath('note', 'Hey Bob, it is Alice!');
+
+        $this->assertDatabaseHas('friend_requests', [
+            'sender_id' => $alice->id,
+            'recipient_id' => $bob->id,
+            'note' => 'Hey Bob, it is Alice!',
+        ]);
+
+        $incoming = $this->actingAs($bob)->getJson('/api/friends')->json();
+        $this->assertSame('Hey Bob, it is Alice!', $incoming['incoming']['data'][0]['note']);
+
+        $outgoing = $this->actingAs($alice)->getJson('/api/friends')->json();
+        $this->assertSame('Hey Bob, it is Alice!', $outgoing['outgoing']['data'][0]['note']);
+
+        // A blank note is allowed and stored as null.
+        $requestId = FriendRequest::first()->id;
+        $this->actingAs($alice)->deleteJson("/api/friends/{$requestId}")->assertOk();
+        $this->actingAs($alice)->postJson('/api/friends', [
+            'user_id' => $bob->id,
+            'note' => '   ',
+        ])->assertCreated()->assertJsonPath('note', null);
+        $this->assertDatabaseHas('friend_requests', [
+            'sender_id' => $alice->id,
+            'note' => null,
+        ]);
+
+        // Notes still have a hard server-side ceiling.
+        $requestId = FriendRequest::first()->id;
+        $this->actingAs($alice)->deleteJson("/api/friends/{$requestId}")->assertOk();
+        $this->actingAs($alice)->postJson('/api/friends', [
+            'user_id' => $bob->id,
+            'note' => str_repeat('x', 161),
+        ])->assertStatus(422)->assertJsonValidationErrors('note');
+        $this->assertSame(0, FriendRequest::where('status', 'pending')->count());
+    }
+
     public function test_cannot_friend_self_or_unknown_user(): void
     {
         $alice = $this->userWithProfile('alice');

@@ -30,7 +30,7 @@ class ReadReceiptTest extends TestCase
             ->assertCreated()->json();
 
         $messageId = $sent['id'];
-        $this->assertSame('delivered', $sent['status']);
+        $this->assertSame('sent', $sent['status']);
         $this->assertSame([], $sent['seen_by']);
         $this->assertDatabaseMissing('message_reads', [
             'message_id' => $messageId,

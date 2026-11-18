@@ -38,9 +38,9 @@ class MessageRequestController extends Controller
                 'avatar' => $other->avatarUrl(),
                 'bio' => $other->profile?->bio,
                 'status_text' => $other->profile?->status,
-                'has_note' => $other->relationLoaded('activeNote')
-                    ? $other->activeNote !== null
-                    : $other->activeNote()->exists(),
+                // Notes stay friends-only: a pending request never reveals
+                // even the cloud marker, let alone the note text.
+                ...$other->notePayload((int) auth()->id()),
             ],
             'preview' => $request->body,
             'created_at' => $request->created_at?->toISOString(),

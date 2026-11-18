@@ -42,7 +42,6 @@ const state = {
     lastWhisperSent: 0,
     selectedMembers: new Set(),
     settingsGroupId: null,
-    activeTab: 'chats',
     friends: [],
     friendRequests: { incoming: [], outgoing: [] },
     messageRequests: { incoming: [], outgoing: [] },
@@ -161,6 +160,10 @@ function updatePresenceUI() {
     document.querySelectorAll('[data-presence-for]').forEach((element) => {
         element.textContent = presenceInfo(element.dataset.presenceFor).label;
     });
+    document.querySelectorAll('[data-friend-presence-for]').forEach((element) => {
+        const presence = presenceInfo(element.dataset.friendPresenceFor);
+        element.innerHTML = `<span class="status-dot ${presence.online ? 'online' : ''}"></span>${presence.online ? 'Online' : 'Offline'}`;
+    });
 }
 
 /* ---------------- small notification sounds ---------------- */
@@ -224,13 +227,47 @@ function shouldPlayReceivedSound(message) {
     return ! activeChatFocused;
 }
 
-/** Consistent avatar + small cloud marker for users with an active note. */
-function avatarWithNote(avatar, hasNote, size = '') {
-    const orb = hasNote
-        ? `<span class="note-orb${size === 'sm' ? ' sm' : ''}" title="Active note">☁</span>`
-        : '';
+/* Inline icons keep the UI dependency-free and sharp at any density. */
+const ICON_CHAT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 20.5l1.4-5.1A8.5 8.5 0 1 1 21 11.5Z"/></svg>';
+const ICON_TRASH = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg>';
+const ICON_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5 9 17.5 20 6.5"/></svg>';
+const ICON_DOUBLE_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12.5 7 17.5 17.5 7"/><path d="M9 12.5 14 17.5 22 8.5"/></svg>';
 
-    return `<span class="avatar-wrap"><img class="avatar${size ? ' '+size : ''}" src="${esc(avatar)}" alt="">${orb}</span>`;
+/** Sent = one grey tick; Seen = two blue ticks. Never a text status. */
+function statusTicksHtml(message) {
+    if (message.sender_id !== state.me.id || message.is_unsent) return '';
+
+    const seen = message.status === 'seen' && (message.seen_by ?? []).length > 0;
+    const label = seen ? 'Seen' : 'Sent';
+
+    return `<span class="status-ticks${seen ? ' seen' : ''}" data-status-ticks="${message.id}"
+                role="img" aria-label="${label}" title="${label}">
+                ${seen ? ICON_DOUBLE_CHECK : ICON_CHECK}<span class="sr-only">${label}</span>
+            </span>`;
+}
+
+function setStatusTicks(row, seen) {
+    const holder = row?.querySelector('[data-status-ticks]');
+    if (! holder) return;
+    const label = seen ? 'Seen' : 'Sent';
+    holder.classList.toggle('seen', seen);
+    holder.setAttribute('aria-label', label);
+    holder.setAttribute('title', label);
+    holder.innerHTML = `${seen ? ICON_DOUBLE_CHECK : ICON_CHECK}<span class="sr-only">${label}</span>`;
+}
+
+/** Avatar + a tiny thought cloud that carries the active note text. */
+function noteCloudHtml(note, size = '') {
+    const text = typeof note === 'string' ? note.trim() : '';
+    if (! text) return '';
+
+    return `<span class="avatar-note${size === 'sm' ? ' sm' : ''}" title="${esc(text)}">
+        <span class="avatar-note-text">${esc(text)}</span>
+    </span>`;
+}
+
+function avatarWithNote(avatar, note, size = '') {
+    return `<span class="avatar-wrap">${noteCloudHtml(note, size)}<img class="avatar${size ? ' '+size : ''}" src="${esc(avatar)}" alt=""></span>`;
 }
 
 function applyUnreadCounts(counts) {
@@ -405,7 +442,7 @@ async function loadConversations() {
         if (state.active) {
             const fresh = state.conversations.find((c) => c.id === state.active.id);
             if (fresh) {
-                state.active.has_note = fresh.has_note;
+                state.active.note = fresh.note;
                 state.active.avatar = fresh.avatar;
                 updateChatHeader();
             }
@@ -421,7 +458,7 @@ function renderConversationList() {
     const list = $('conversation-list');
 
     if (! state.conversations.length) {
-        list.innerHTML = '<li class="empty-list">No conversations yet.<br>Search for someone to start chatting.</li>';
+        list.innerHTML = '<li class="empty-list">No chats yet.<br>Find friends above to start chatting.</li>';
         return;
     }
 
@@ -436,7 +473,7 @@ function renderConversationList() {
 
         return `
             <li class="conv-item ${state.active?.id === c.id ? 'active' : ''}" data-id="${c.id}">
-                ${avatarWithNote(c.avatar, c.has_note)}
+                ${avatarWithNote(c.avatar, c.note)}
                 <div class="body">
                     <div class="conv-row">
                         <span class="conv-name">${presence.dot}${esc(c.name)}${presence.label ? `<span class="conv-presence">${esc(presence.label)}</span>` : ''}</span>
@@ -457,7 +494,7 @@ $('conversation-list').addEventListener('click', (event) => {
 });
 
 $('chat-back').addEventListener('click', () => {
-    $('app').classList.remove('show-chat', 'show-right');
+    $('app').classList.remove('show-chat');
 });
 
 /* ================================================================
@@ -476,7 +513,7 @@ function renderUserResults(users, container, onPick) {
         const button = document.createElement('button');
         button.type = 'button';
         button.innerHTML = `
-            ${avatarWithNote(user.avatar, user.has_note, 'sm')}
+            ${avatarWithNote(user.avatar, user.note, 'sm')}
             <span class="who"><strong>${esc(user.name)}</strong><small>@${esc(user.username)}</small></span>`;
         button.addEventListener('click', () => onPick(user));
         container.appendChild(button);
@@ -497,7 +534,6 @@ $('user-search').addEventListener('input', debounce(async (event) => {
                     // Non-friends may never open a normal thread — only a request.
                     if (user.conversation_id) {
                         toast('You are not friends yet. Accept or send a message request first.');
-                        switchTab('requests');
                         return;
                     }
                     openRequestComposer(user);
@@ -533,7 +569,13 @@ function updateChatHeader() {
         ? esc(state.active.subtitle ?? 'Group conversation')
         : `<span class="status-dot ${presence.online ? 'online' : ''}"></span>${esc(presence.label || 'Offline')}`;
     $('chat-avatar').src = state.active.avatar ?? '/images/default-avatar.svg';
-    $('chat-note-orb').hidden = state.active.type !== 'direct' || ! state.active.has_note;
+
+    const note = state.active.type === 'direct' ? state.active.note : null;
+    const cloud = $('chat-note-cloud');
+    cloud.hidden = ! note;
+    cloud.innerHTML = note ? `<span class="avatar-note-text">${esc(note)}</span>` : '';
+    cloud.title = note ?? '';
+
     $('group-info-btn').hidden = state.active.type !== 'group';
 }
 
@@ -556,16 +598,7 @@ function attachmentHtml(message) {
 }
 
 function statusHtml(message) {
-    if (message.sender_id !== state.me.id) return '';
-    const seen = message.seen_by ?? [];
-
-    if (message.status === 'seen' && seen.length) {
-        const avatars = seen.slice(0, 3).map((s) => `<img src="${esc(s.avatar)}" alt="${esc(s.name)}" title="${esc(s.name)}">`).join('');
-        return `<div class="seen-line">${avatars}<span>Seen${seen.length > 1 ? ` by ${seen.length}` : ''}</span></div>`;
-    }
-
-    const label = message.status === 'sent' ? 'Sent' : 'Delivered ✓';
-    return `<div class="status-line" data-status-for="${message.id}">${label}</div>`;
+    return statusTicksHtml(message);
 }
 
 function unsentPreview(message) {
@@ -691,7 +724,7 @@ function handleAccessRevoked(conversationId) {
     state.active = null;
     state.activeGroup = null;
     $('chat').classList.remove('open');
-    $('app').classList.remove('show-chat', 'show-right');
+    $('app').classList.remove('show-chat');
     $('empty-chat').style.display = '';
     $('settings-modal').classList.remove('show');
     toast('You no longer have access to this conversation.');
@@ -700,8 +733,7 @@ function handleAccessRevoked(conversationId) {
 
 async function openConversation(id) {
     if (state.active?.id === id) {
-        $('app').classList.remove('show-right');
-        $('app').classList.add('show-chat');
+        showChatView();
         return;
     }
 
@@ -719,8 +751,7 @@ async function openConversation(id) {
 
     $('empty-chat').style.display = 'none';
     $('chat').classList.add('open');
-    $('app').classList.remove('show-right');
-    $('app').classList.add('show-chat');
+    showChatView();
     $('messages').innerHTML = '';
     $('jump-latest').hidden = true;
     $('message-input').value = '';
@@ -795,24 +826,18 @@ async function openConversation(id) {
                 return;
             }
 
-            const row = [...$('messages').querySelectorAll('.msg-row')]
-                .find((el) => Number(el.dataset.id) === Number(event.message_id));
-            if (! row) return;
-
             const reader = {
                 user_id: event.user_id,
                 name: event.name,
                 avatar: event.avatar,
                 read_at: event.read_at,
             };
-            const line = document.createElement('div');
-            line.className = 'seen-line';
-            line.innerHTML = `<img src="${esc(event.avatar)}" alt="${esc(event.name)}" title="${esc(event.name)}"><span>Seen</span>`;
-            row.querySelector('.status-line')?.remove();
-            row.querySelector('.seen-line')?.remove();
-            row.querySelector('div:last-child')?.appendChild(line);
 
-            // Keep the conversation-preview status in sync without a refresh.
+            const row = [...$('messages').querySelectorAll('.msg-row')]
+                .find((el) => Number(el.dataset.id) === Number(event.message_id));
+            if (row) setStatusTicks(row, true);
+
+            // Keep the cached conversation preview in sync without a refresh.
             const conversation = state.conversations.find((c) => c.id === event.conversation_id);
             if (conversation?.last_message?.id === event.message_id) {
                 const readers = conversation.last_message.seen_by ?? [];
@@ -871,6 +896,18 @@ function updateSendButton() {
     $('send-btn').disabled = ! state.active || ! hasContent;
 }
 
+function showAttachmentError(message) {
+    const box = $('attachment-error');
+    box.textContent = message;
+    box.hidden = false;
+}
+
+function clearAttachmentError() {
+    const box = $('attachment-error');
+    box.textContent = '';
+    box.hidden = true;
+}
+
 /** XHR gives us real upload progress; fetch does not. */
 function uploadMessage(formData) {
     return new Promise((resolve, reject) => {
@@ -893,7 +930,11 @@ function uploadMessage(formData) {
                 resolve(JSON.parse(xhr.responseText));
             } else {
                 let message = `Request failed (${xhr.status})`;
-                try { message = JSON.parse(xhr.responseText).message ?? message; } catch { /* ignore */ }
+                try {
+                    const errorBody = JSON.parse(xhr.responseText);
+                    const firstError = Object.values(errorBody.errors ?? {})[0]?.[0];
+                    message = firstError ?? errorBody.message ?? message;
+                } catch { /* ignore */ }
                 reject(new Error(message));
             }
         });
@@ -918,6 +959,7 @@ $('composer').addEventListener('submit', async (event) => {
     input.value = '';
     input.style.height = 'auto';
     state.pendingAttachments = [];
+    clearAttachmentError();
     renderAttachmentPreviews();
 
     const data = new FormData();
@@ -934,7 +976,11 @@ $('composer').addEventListener('submit', async (event) => {
         if (body) input.value = body;
         state.pendingAttachments = files;
         renderAttachmentPreviews();
-        toast(error.message);
+        if (/larger than 20 MB/i.test(error.message)) {
+            showAttachmentError("File can't be larger than 20 MB");
+        } else {
+            toast(error.message);
+        }
     }
 });
 
@@ -985,7 +1031,7 @@ function renderGroupMemberChoices(users) {
         row.className = 'member-row';
         const selected = state.selectedMembers.has(user.id);
         row.innerHTML = `
-            ${avatarWithNote(user.avatar, user.has_note, 'sm')}
+            ${avatarWithNote(user.avatar, user.note, 'sm')}
             <span class="who">${esc(user.name)}<small>@${esc(user.username)}</small></span>
             <button type="button" class="btn ${selected ? 'primary' : ''}" data-id="${user.id}">${selected ? '✓ Added' : 'Add'}</button>`;
         row.querySelector('button').addEventListener('click', (event) => {
@@ -1159,43 +1205,67 @@ document.querySelectorAll('.backdrop').forEach((backdrop) => {
 });
 
 /* ================================================================
- * Right rail navigation
+ * Sidebar / right-panel navigation
  * ================================================================ */
 
-const compactLayout = () => window.matchMedia('(max-width: 1100px)').matches;
-
-function switchTab(tab) {
-    state.activeTab = tab;
-
-    document.querySelectorAll('.tab').forEach((button) => {
-        button.classList.toggle('active', button.dataset.tab === tab);
-    });
-
-    // Conversations always stay in the left pane; only the right rail changes.
-    ['friends', 'requests'].forEach((name) => {
-        $(`pane-${name}`).hidden = name !== tab;
-    });
-
-    if (tab === 'chats') {
-        $('app').classList.remove('show-right');
-        return;
-    }
-
-    // On smaller screens the rail slides over the list/chat instead of
-    // squeezing three columns into one viewport.
-    if (compactLayout()) {
-        $('app').classList.add('show-right');
-        $('app').classList.remove('show-chat');
+function openPeoplePanel() {
+    const app = $('app');
+    app.classList.remove('show-chat');
+    if (window.matchMedia('(max-width: 1100px)').matches) {
+        app.classList.add('people-visible');
+    } else {
+        app.classList.remove('people-hidden');
     }
 }
 
-document.querySelectorAll('.tab').forEach((button) => {
-    button.addEventListener('click', () => switchTab(button.dataset.tab));
+function closePeoplePanel() {
+    const app = $('app');
+    app.classList.remove('people-visible');
+    if (window.matchMedia('(max-width: 1100px)').matches) return;
+    app.classList.add('people-hidden');
+}
+
+document.querySelectorAll('.people-toggle').forEach((button) => {
+    button.addEventListener('click', () => {
+        const app = $('app');
+        const isOpen = window.matchMedia('(max-width: 1100px)').matches
+            ? app.classList.contains('people-visible')
+            : ! app.classList.contains('people-hidden');
+        if (isOpen) closePeoplePanel();
+        else openPeoplePanel();
+    });
 });
 
-$('friends-shortcut').addEventListener('click', () => switchTab('friends'));
-$('requests-shortcut').addEventListener('click', () => switchTab('requests'));
-$('right-back').addEventListener('click', () => switchTab('chats'));
+$('right-panel-close').addEventListener('click', closePeoplePanel);
+
+// Opening a chat replaces the people panel on small screens.
+function showChatView() {
+    $('app').classList.remove('people-visible');
+    $('app').classList.add('show-chat');
+}
+
+function activateRightTab(name) {
+    const friends = name === 'friends';
+    ['friends', 'requests'].forEach((tab) => {
+        const selected = tab === name;
+        $(`tab-${tab}`).classList.toggle('active', selected);
+        $(`tab-${tab}`).setAttribute('aria-selected', String(selected));
+    });
+    $('panel-friends').hidden = ! friends;
+    $('panel-requests').hidden = friends;
+}
+
+$('tab-friends').addEventListener('click', () => activateRightTab('friends'));
+$('tab-requests').addEventListener('click', () => activateRightTab('requests'));
+
+function updateRequestsBadge() {
+    const friendCount = parseInt($('friend-incoming-count').textContent, 10) || 0;
+    const messageCount = parseInt($('message-request-count').textContent, 10) || 0;
+    const total = friendCount + messageCount;
+    const badge = $('right-requests-badge');
+    badge.textContent = total ? (total > 99 ? '99+' : String(total)) : '';
+    badge.hidden = ! total;
+}
 
 /* ================================================================
  * Notes (24-hour, friends only)
@@ -1206,9 +1276,22 @@ async function loadNotes() {
         const page = await api('/api/notes');
         state.notes = page.data ?? [];
         renderNotes();
+        renderMyNoteBubble();
     } catch (error) {
         toast(error.message);
     }
+}
+
+function renderMyNoteBubble() {
+    const mine = state.notes.find((note) => note.is_mine);
+    const bubble = $('me-note-bubble');
+    const label = mine?.content ?? '+ Note';
+    bubble.textContent = label;
+    bubble.title = label;
+
+    const trigger = $('me-note-avatar');
+    trigger.title = mine ? 'Edit your note' : 'Leave a note';
+    trigger.setAttribute('aria-label', trigger.title);
 }
 
 function renderNotes() {
@@ -1220,10 +1303,10 @@ function renderNotes() {
     </div>`];
 
     state.notes.filter((note) => ! note.is_mine).forEach((note) => {
-        cards.push(`<div class="note-card" data-note="${note.id}" title="${esc(note.user.name)}'s note">
+        cards.push(`<div class="note-card" data-note="${note.id}" title="Open chat with ${esc(note.user.name)}">
             <div class="note-cloud">
                 <img class="avatar" src="${esc(note.user.avatar)}" alt="">
-                <span class="note-text">☁ ${esc(note.content)}</span>
+                <span class="note-text">${esc(note.content)}</span>
             </div>
         </div>`);
     });
@@ -1261,7 +1344,11 @@ $('add-note-btn').addEventListener('click', () => {
     openNoteEditor(state.notes.find((note) => note.is_mine) ?? null);
 });
 
-$('notes-list').addEventListener('click', (event) => {
+$('me-note-avatar').addEventListener('click', () => {
+    openNoteEditor(state.notes.find((note) => note.is_mine) ?? null);
+});
+
+$('notes-list').addEventListener('click', async (event) => {
     const card = event.target.closest('.note-card');
     if (! card) return;
 
@@ -1275,7 +1362,8 @@ $('notes-list').addEventListener('click', (event) => {
     if (note.is_mine) {
         openNoteEditor(note);
     } else {
-        openNoteViewer(note);
+        // A friend's note is a shortcut into their chat.
+        await openChatWithFriend(note.user.id);
     }
 });
 
@@ -1333,6 +1421,16 @@ $('note-delete-btn').addEventListener('click', async () => {
  * Friends
  * ================================================================ */
 
+async function openChatWithFriend(friendId) {
+    try {
+        const result = await api(`/api/conversations/direct/${friendId}`, { method: 'POST' });
+        await loadConversations();
+        await openConversation(result.id);
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
 async function loadFriends() {
     try {
         const data = await api('/api/friends');
@@ -1345,36 +1443,42 @@ async function loadFriends() {
         const incomingCount = data.counts?.incoming ?? 0;
         $('friends-count').textContent = data.counts?.friends ?? '';
         $('friend-incoming-count').textContent = incomingCount;
-        $('friend-shortcut-badge').hidden = ! incomingCount;
-        $('friend-shortcut-badge').textContent = incomingCount > 99 ? '99+' : String(incomingCount);
+        updateRequestsBadge();
 
         const list = $('friend-list');
-        list.innerHTML = state.friends.length ? state.friends.map((friend) => `
-            <li class="conv-item" data-friend="${friend.id}">
-                ${avatarWithNote(friend.avatar, friend.has_note)}
+        list.innerHTML = state.friends.length ? state.friends.map((friend) => {
+            const presence = presenceInfo(friend.id);
+            return `
+            <li class="conv-item" data-friend="${friend.id}" title="Open chat with ${esc(friend.name)}">
+                ${avatarWithNote(friend.avatar, friend.note)}
                 <div class="body">
-                    <div class="conv-row"><span class="conv-name">${esc(friend.name)}</span><span class="conv-presence" data-presence-for="${friend.id}">${esc(presenceInfo(friend.id).label)}</span></div>
+                    <div class="conv-row">
+                        <span class="conv-name">${esc(friend.name)}</span>
+                        <span class="conv-presence" data-friend-presence-for="${friend.id}"><span class="status-dot ${presence.online ? 'online' : ''}"></span>${presence.online ? 'Online' : 'Offline'}</span>
+                    </div>
                     <div class="conv-bottom">
                         <span class="conv-preview">@${esc(friend.username)}${friend.status ? ' · ' + esc(friend.status) : ''}</span>
                         <span class="action-row">
-                            <button class="mini-btn primary" data-message="${friend.id}" type="button">Chat</button>
-                            <button class="mini-btn danger" data-unfriend="${friend.id}" type="button">Remove</button>
+                            <button class="row-icon-btn" data-message="${friend.id}" type="button" title="Chat" aria-label="Chat with ${esc(friend.name)}">${ICON_CHAT}</button>
+                            <button class="row-icon-btn danger" data-unfriend="${friend.id}" type="button" title="Remove friend" aria-label="Remove ${esc(friend.name)}">${ICON_TRASH}</button>
                         </span>
                     </div>
                 </div>
-            </li>`).join('') : '<li class="empty-list">No friends yet. Find people below.</li>';
+            </li>`;
+        }).join('') : '<li class="empty-list">No friends yet. Open the Requests tab to send one.</li>';
 
         const incoming = data.incoming?.data ?? [];
         $('friend-request-list').innerHTML = incoming.length ? incoming.map((item) => `
             <li class="conv-item">
-                ${avatarWithNote(item.user.avatar, item.user.has_note)}
+                ${avatarWithNote(item.user.avatar, item.user.note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span>
                         <span class="conv-time">${esc(formatShortTime(item.created_at))}</span></div>
-                    <div class="conv-bottom"><span class="conv-preview">@${esc(item.user.username)}</span>
+                    <div class="conv-bottom">
+                        <span class="conv-preview">${item.note ? esc(item.note) : '@'.concat(esc(item.user.username))}</span>
                         <span class="action-row">
-                            <button class="mini-btn primary" data-accept-friend="${item.id}" type="button">Accept</button>
-                            <button class="mini-btn" data-reject-friend="${item.id}" type="button">Reject</button>
+                            <button class="row-icon-btn" data-accept-friend="${item.id}" type="button" title="Accept" aria-label="Accept friend request">${ICON_CHECK}</button>
+                            <button class="row-icon-btn danger" data-reject-friend="${item.id}" type="button" title="Reject" aria-label="Reject friend request">✕</button>
                         </span>
                     </div>
                 </div>
@@ -1383,11 +1487,12 @@ async function loadFriends() {
         const outgoing = data.outgoing?.data ?? [];
         $('friend-sent-list').innerHTML = outgoing.length ? outgoing.map((item) => `
             <li class="conv-item">
-                ${avatarWithNote(item.user.avatar, item.user.has_note)}
+                ${avatarWithNote(item.user.avatar, item.user.note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span></div>
-                    <div class="conv-bottom"><span class="conv-preview">@${esc(item.user.username)} · Pending</span>
-                        <button class="mini-btn danger" data-cancel-friend="${item.id}" type="button">Cancel</button>
+                    <div class="conv-bottom">
+                        <span class="conv-preview">Pending${item.note ? ' · ' + esc(item.note) : ''}</span>
+                        <button class="row-icon-btn danger" data-cancel-friend="${item.id}" type="button" title="Cancel request" aria-label="Cancel friend request">${ICON_TRASH}</button>
                     </div>
                 </div>
             </li>`).join('') : '<li class="empty-list">No sent requests.</li>';
@@ -1403,15 +1508,7 @@ $('friend-list').addEventListener('click', async (event) => {
     const removeButton = event.target.closest('[data-unfriend]');
 
     if (messageButton) {
-        const friendId = Number(messageButton.dataset.message);
-        try {
-            const result = await api(`/api/conversations/direct/${friendId}`, { method: 'POST' });
-            await loadConversations();
-            switchTab('chats');
-            await openConversation(result.id);
-        } catch (error) {
-            toast(error.message);
-        }
+        await openChatWithFriend(Number(messageButton.dataset.message));
         return;
     }
 
@@ -1424,7 +1521,12 @@ $('friend-list').addEventListener('click', async (event) => {
         } catch (error) {
             toast(error.message);
         }
+        return;
     }
+
+    // Clicking the row (including its note cloud) opens/starts the chat.
+    const row = event.target.closest('[data-friend]');
+    if (row) await openChatWithFriend(Number(row.dataset.friend));
 });
 
 $('friend-request-list').addEventListener('click', async (event) => {
@@ -1456,19 +1558,38 @@ $('friend-sent-list').addEventListener('click', async (event) => {
     }
 });
 
+function clearFindFriends() {
+    $('friend-search').value = '';
+    $('friend-request-note').value = '';
+    $('friend-results').innerHTML = '';
+}
+
+$('find-friends-btn').addEventListener('click', () => {
+    clearFindFriends();
+    $('find-friends-modal').classList.add('show');
+    $('friend-search').focus();
+});
+
+$('find-friends-modal').addEventListener('click', (event) => {
+    if (event.target === $('find-friends-modal')) clearFindFriends();
+});
+
 $('friend-search').addEventListener('input', debounce(async (event) => {
     const query = event.target.value.trim();
     try {
-        const users = await api(`/api/users?q=${encodeURIComponent(query)}`);
+        // scope=find-friends applies all exclusions on the backend: me,
+        // existing friends, existing chats and pending requests either way.
+        const users = await api(`/api/users?scope=find-friends&q=${encodeURIComponent(query)}`);
         renderUserResults(users, $('friend-results'), async (user) => {
             try {
+                const note = $('friend-request-note').value.trim();
                 const result = await api('/api/friends', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: user.id }),
+                    body: JSON.stringify({ user_id: user.id, note }),
                 });
-                $('friend-results').innerHTML = '';
-                $('friend-search').value = '';
+                clearFindFriends();
+                $('find-friends-modal').classList.remove('show');
                 toast(result.status === 'accepted' ? 'You are now friends.' : 'Friend request sent.');
                 loadFriends();
             } catch (error) {
@@ -1493,12 +1614,11 @@ async function loadMessageRequests() {
         $('message-request-count').textContent = total ? `${total} new` : '';
         $('request-badge').hidden = ! total;
         $('request-badge').textContent = label;
-        $('request-shortcut-badge').hidden = ! total;
-        $('request-shortcut-badge').textContent = label;
+        updateRequestsBadge();
 
         $('message-request-list').innerHTML = data.incoming?.data?.length ? data.incoming.data.map((item) => `
             <li class="conv-item" data-request="${item.id}">
-                ${avatarWithNote(item.user.avatar, item.user.has_note)}
+                ${avatarWithNote(item.user.avatar, item.user.note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span>
                         <span class="conv-time">${esc(formatShortTime(item.created_at))}</span></div>
@@ -1508,7 +1628,7 @@ async function loadMessageRequests() {
 
         $('message-sent-list').innerHTML = data.sent?.data?.length ? data.sent.data.map((item) => `
             <li class="conv-item" data-request="${item.id}">
-                ${avatarWithNote(item.user.avatar, item.user.has_note)}
+                ${avatarWithNote(item.user.avatar, item.user.note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span></div>
                     <div class="conv-bottom"><span class="conv-preview">${esc(item.preview)}</span></div>
@@ -1523,7 +1643,7 @@ function openRequestComposer(user) {
     state.currentRequest = { mode: 'new', user };
     $('request-details').innerHTML = `
         <div class="member-row">
-            ${avatarWithNote(user.avatar, user.has_note)}
+            ${avatarWithNote(user.avatar, user.note)}
             <span class="who">${esc(user.name)}<small>@${esc(user.username)}</small></span>
         </div>
         <p class="muted">You are not friends yet. Send a short message request — they can accept it to start a normal chat.</p>`;
@@ -1546,7 +1666,7 @@ async function openRequestPreview(id) {
 
         $('request-details').innerHTML = `
             <div class="member-row">
-                ${avatarWithNote(request.user.avatar, request.user.has_note)}
+                ${avatarWithNote(request.user.avatar, request.user.note)}
                 <span class="who">${esc(request.user.name)}
                     <small>@${esc(request.user.username)}${request.user.bio ? ' · ' + esc(request.user.bio) : ''}</small></span>
             </div>
@@ -1585,7 +1705,6 @@ $('request-send-btn').addEventListener('click', async () => {
         });
         $('request-modal').classList.remove('show');
         toast('Message request sent.');
-        switchTab('requests');
         loadMessageRequests();
     } catch (error) {
         toast(error.message);
@@ -1599,7 +1718,6 @@ $('request-accept-btn').addEventListener('click', async () => {
         $('request-modal').classList.remove('show');
         toast('Request accepted — you are now friends.');
         await Promise.all([loadConversations(), loadFriends(), loadNotes(), loadMessageRequests()]);
-        switchTab('chats');
         await openConversation(result.conversation_id);
     } catch (error) {
         toast(error.message);
@@ -1752,10 +1870,14 @@ $('attach-btn').addEventListener('click', () => $('attachment-input').click());
 $('attachment-input').addEventListener('change', (event) => {
     const chosen = [...(event.target.files ?? [])];
     const MAX = 20 * 1024 * 1024;
+    let oversized = false;
+
+    clearAttachmentError();
 
     for (const file of chosen) {
         if (file.size > MAX) {
-            toast(`${file.name} is larger than 20 MB.`);
+            // The only inline file-size message: this file is never queued.
+            oversized = true;
             continue;
         }
         if (state.pendingAttachments.length >= 5) {
@@ -1764,6 +1886,8 @@ $('attachment-input').addEventListener('change', (event) => {
         }
         state.pendingAttachments.push(file);
     }
+
+    if (oversized) showAttachmentError("File can't be larger than 20 MB");
 
     event.target.value = '';
     renderAttachmentPreviews();

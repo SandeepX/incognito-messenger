@@ -18,63 +18,64 @@
 
 <div class="app" id="app">
     <aside class="sidebar">
-        <div class="brand-bar">
-            <span class="brand-icon">🕶️</span>
-            <div><strong>Incognito Messenger</strong><small>Private by design</small></div>
-            <button id="notification-btn" class="icon-btn" type="button" title="Notifications" aria-label="Notifications">
-                🔔<span id="notification-badge" class="badge" hidden></span>
-            </button>
+        <!-- Fixed header: brand, own avatar/note, search and notes strip. -->
+        <div class="sidebar-fixed">
+            <div class="brand-bar">
+                <span class="brand-icon">🕶️</span>
+                <div><strong>Incognito Messenger</strong><small>Private by design</small></div>
+                <button id="friends-panel-btn" class="icon-btn friends-panel-btn people-toggle" type="button" title="Open friends panel" aria-label="Open friends panel">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20M9 10.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M22 20v-1.5a4 4 0 0 0-3-3.87M16 3.63a4 4 0 0 1 0 7.75"/></svg>
+                </button>
+                <button id="notification-btn" class="icon-btn" type="button" title="Notifications" aria-label="Notifications">
+                    🔔<span id="notification-badge" class="badge" hidden></span>
+                </button>
+            </div>
+
+            <div class="me-card">
+                <button id="me-note-avatar" class="avatar-note-trigger" type="button" title="Leave a note" aria-label="Leave a note">
+                    <img id="me-avatar" class="avatar" src="{{ $me->avatarUrl() }}" alt="Your avatar">
+                    <span id="me-note-bubble" class="me-note-bubble">+ Note</span>
+                </button>
+                <div class="who">
+                    <strong>{{ $me->name }}</strong>
+                    <small>{{ '@'.$me->username }}</small>
+                </div>
+                <a class="icon-btn" href="{{ route('profile.edit') }}" title="Edit profile" aria-label="Edit profile">⚙</a>
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+                    <button class="logout" type="submit" title="Log out" aria-label="Log out">⏻</button>
+                </form>
+            </div>
+
+            <div class="search-wrap">
+                <input id="user-search" type="text" autocomplete="off" placeholder="Find friends by name or username">
+                <div id="search-results" class="search-results"></div>
+            </div>
+
+            <!-- Messenger-style Notes: only you and accepted friends appear here. -->
+            <section class="notes-strip">
+                <div class="section-head small">
+                    <h2>Notes</h2>
+                    <button id="add-note-btn" class="icon-btn" type="button" title="Leave a note" aria-label="Leave a note">＋</button>
+                </div>
+                <div id="notes-list" class="notes-list">
+                    <span class="empty-notes">No active notes yet.</span>
+                </div>
+            </section>
         </div>
 
-        <!-- Small-screen entry points; harmless on desktop where the right
-             panel is already visible. -->
-        <div class="left-shortcuts">
-            <button id="friends-shortcut" class="shortcut-btn" type="button">
-                👥 Friends<span id="friend-shortcut-badge" class="badge" hidden></span>
-            </button>
-            <button id="requests-shortcut" class="shortcut-btn" type="button">
-                ✉️ Requests<span id="request-shortcut-badge" class="badge" hidden></span>
-            </button>
-        </div>
-
-        <div class="me-card">
-            <img class="avatar" src="{{ $me->avatarUrl() }}" alt="Your avatar">
-            <div class="who">
-                <strong>{{ $me->name }}</strong>
-                <small>{{ '@'.$me->username }}</small>
-            </div>
-            <a class="icon-btn" href="{{ route('profile.edit') }}" title="Edit profile" aria-label="Edit profile">⚙</a>
-            <form method="POST" action="{{ route('logout') }}">
-                @csrf
-                <button class="logout" type="submit" title="Log out" aria-label="Log out">⏻</button>
-            </form>
-        </div>
-
-        <div class="search-wrap">
-            <input id="user-search" type="text" autocomplete="off" placeholder="Search people by name or username">
-            <div id="search-results" class="search-results"></div>
-        </div>
-
-        <!-- Messenger-style Notes: only you and accepted friends appear here. -->
-        <section class="notes-strip">
-            <div class="section-head small">
-                <h2>Notes</h2>
-                <button id="add-note-btn" class="icon-btn" type="button" title="Add a note" aria-label="Add a note">＋</button>
-            </div>
-            <div id="notes-list" class="notes-list">
-                <span class="empty-notes">No active notes yet.</span>
-            </div>
-        </section>
-
-        <!-- ---------------- Conversations ---------------- -->
-        <div id="pane-chats" class="list-pane">
-            <div class="section-head">
-                <h2>Conversations</h2>
-                <button id="new-group-btn" class="icon-btn" type="button" title="New group" aria-label="New group">＋</button>
-            </div>
-            <ul id="conversation-list" class="conv-list">
-                <li class="empty-list">Loading conversations…</li>
-            </ul>
+        <!-- Only this area scrolls; the header above stays fixed. -->
+        <div class="sidebar-scroll slim-scroll">
+            <!-- ---------------- Chats ---------------- -->
+            <section id="pane-chats" class="list-pane">
+                <div class="section-head">
+                    <h2>Chats</h2>
+                    <button id="new-group-btn" class="icon-btn" type="button" title="New group" aria-label="New group">＋</button>
+                </div>
+                <ul id="conversation-list" class="conv-list">
+                    <li class="empty-list">Loading chats…</li>
+                </ul>
+            </section>
         </div>
     </aside>
 
@@ -82,8 +83,8 @@
         <div id="empty-chat" class="empty-chat">
             <div>
                 <div class="big">💬</div>
-                <strong>Select a conversation</strong>
-                <p>Search for someone above, or tap ＋ to start a group.</p>
+                <strong>Select a chat</strong>
+                <p>Open the friends panel to start a chat, or tap ＋ for a group.</p>
             </div>
         </div>
 
@@ -92,13 +93,16 @@
                 <button id="chat-back" class="back-btn" type="button" aria-label="Back">‹</button>
                 <span class="avatar-wrap">
                     <img id="chat-avatar" class="avatar" src="{{ asset('images/default-avatar.svg') }}" alt="">
-                    <span id="chat-note-orb" class="note-orb" title="Active note" hidden>☁</span>
+                    <span id="chat-note-cloud" class="avatar-note" hidden></span>
                 </span>
                 <div class="who">
                     <strong id="chat-name">—</strong>
                     <small id="chat-subtitle"></small>
                 </div>
                 <div id="typing" class="typing"><span id="typing-label">typing</span><span class="dots"><i></i><i></i><i></i></span></div>
+                <button id="chat-people-btn" class="icon-btn people-toggle chat-people-btn" type="button" title="Open friends panel" aria-label="Open friends panel">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20M9 10.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M22 20v-1.5a4 4 0 0 0-3-3.87M16 3.63a4 4 0 0 1 0 7.75"/></svg>
+                </button>
                 <button id="group-info-btn" class="icon-btn" type="button" title="Group settings" aria-label="Group settings" hidden>⋯</button>
             </header>
 
@@ -108,6 +112,7 @@
                 <button id="jump-latest" class="jump-latest" type="button" hidden>Jump to latest ↓</button>
 
                 <div id="attachment-previews" class="attachment-previews" hidden></div>
+                <div id="attachment-error" class="attachment-error" role="alert" hidden></div>
                 <div id="upload-progress" class="upload-progress" hidden><div class="bar"></div></div>
 
                 <div class="composer-tools">
@@ -127,45 +132,78 @@
         </button>
                 </div>
             </form>
-            <div class="composer-hint">Enter to send · Shift + Enter for a new line · Files up to 20 MB</div>
         </section>
     </main>
 
-    <!-- ---------------- Right rail: friends + requests ---------------- -->
-    <aside class="right-panel" id="right-panel">
-        <div class="right-head">
-            <button id="right-back" class="back-btn" type="button" aria-label="Back to chats">‹</button>
-            <div class="tabs" role="tablist">
-                <button class="tab active" type="button" data-tab="friends" role="tab">Friends</button>
-                <button class="tab" type="button" data-tab="requests" role="tab">
-                    Requests<span id="request-badge" class="badge" hidden></span>
-                </button>
+    <aside id="right-panel" class="right-panel" aria-label="Friends and requests">
+        <div class="right-panel-head">
+            <strong>People</strong>
+            <button id="right-panel-close" class="icon-btn" type="button" title="Close friends panel" aria-label="Close friends panel">✕</button>
+        </div>
+
+        <div class="right-panel-tabs" role="tablist" aria-label="People sections">
+            <button id="tab-friends" class="right-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-friends">Friends</button>
+            <button id="tab-requests" class="right-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-requests">
+                Requests<span id="right-requests-badge" class="badge" hidden></span>
+            </button>
+        </div>
+
+        <div class="right-panel-scroll slim-scroll">
+            <div id="panel-friends" class="right-tab-panel" role="tabpanel" aria-labelledby="tab-friends">
+                <section id="pane-friends" class="list-pane">
+                    <div class="section-head">
+                        <h2>Your Friends</h2>
+                        <span id="friends-count" class="muted"></span>
+                    </div>
+                    <ul id="friend-list" class="conv-list compact-list"><li class="empty-list">Loading friends…</li></ul>
+                </section>
+            </div>
+
+            <div id="panel-requests" class="right-tab-panel" role="tabpanel" aria-labelledby="tab-requests" hidden>
+                <section id="pane-friend-requests" class="list-pane">
+                    <div class="section-head">
+                        <h2>Friend Requests</h2>
+                        <span class="head-meta">
+                            <span id="friend-incoming-count" class="muted"></span>
+                            <button id="find-friends-btn" class="right-add-btn" type="button" title="Send a friend request" aria-label="Send a friend request">＋ Send request</button>
+                        </span>
+                    </div>
+                    <ul id="friend-request-list" class="conv-list compact-list"></ul>
+
+                    <div class="section-head"><h2>Sent Friend Requests</h2></div>
+                    <ul id="friend-sent-list" class="conv-list compact-list"></ul>
+                </section>
+
+                <section id="pane-message-requests" class="list-pane">
+                    <div class="section-head">
+                        <h2>Message Requests</h2>
+                        <span class="head-meta">
+                            <span id="message-request-count" class="muted"></span>
+                            <span id="request-badge" class="badge" hidden></span>
+                        </span>
+                    </div>
+                    <ul id="message-request-list" class="conv-list compact-list"><li class="empty-list">No message requests.</li></ul>
+
+                    <div class="section-head"><h2>Sent Message Requests</h2></div>
+                    <ul id="message-sent-list" class="conv-list compact-list"></ul>
+                </section>
             </div>
         </div>
-
-        <div id="pane-friends" class="list-pane right-pane">
-            <div class="section-head"><h2>Friends</h2><span id="friends-count" class="muted"></span></div>
-            <ul id="friend-list" class="conv-list compact-list"><li class="empty-list">Loading friends…</li></ul>
-
-            <div class="section-head"><h2>Friend Requests</h2><span id="friend-incoming-count" class="muted"></span></div>
-            <ul id="friend-request-list" class="conv-list compact-list"></ul>
-
-            <div class="section-head"><h2>Sent Requests</h2></div>
-            <ul id="friend-sent-list" class="conv-list compact-list"></ul>
-
-            <div class="section-head"><h2>Find People</h2></div>
-            <input id="friend-search" class="inline-search" type="text" autocomplete="off" placeholder="Search registered users">
-            <div id="friend-results" class="search-results static-results"></div>
-        </div>
-
-        <div id="pane-requests" class="list-pane right-pane" hidden>
-            <div class="section-head"><h2>Message Requests</h2><span id="message-request-count" class="muted"></span></div>
-            <ul id="message-request-list" class="conv-list compact-list"><li class="empty-list">No message requests.</li></ul>
-
-            <div class="section-head"><h2>Sent Requests</h2></div>
-            <ul id="message-sent-list" class="conv-list compact-list"></ul>
-        </div>
     </aside>
+</div>
+
+<!-- Find friends (right-panel modal) -->
+<div id="find-friends-modal" class="backdrop">
+    <div class="modal">
+        <div class="row-between"><h2>Find friends</h2>
+            <button class="icon-btn" type="button" data-close="find-friends-modal" aria-label="Close">✕</button>
+        </div>
+        <label for="friend-search">Search by name or username</label>
+        <input id="friend-search" class="inline-search" type="text" autocomplete="off" placeholder="Find friends…">
+        <label for="friend-request-note">Note (optional)</label>
+        <textarea id="friend-request-note" maxlength="160" rows="2" placeholder="Say hello — you can leave this blank"></textarea>
+        <div id="friend-results" class="search-results static-results"></div>
+    </div>
 </div>
 
 <!-- New group -->
@@ -217,7 +255,7 @@
             <button class="icon-btn" type="button" data-close="note-modal" aria-label="Close">✕</button>
         </div>
         <div id="note-author" class="member-row" hidden></div>
-        <textarea id="note-content" maxlength="300" rows="4" placeholder="What's on your mind? (disappears after 24 hours)"></textarea>
+        <textarea id="note-content" maxlength="60" rows="3" placeholder="A short note — up to 60 characters, gone after 24 hours"></textarea>
         <div class="modal-actions">
             <button id="note-save-btn" class="btn primary" type="button">Save note</button>
             <button id="note-delete-btn" class="btn danger" type="button" hidden>Delete note</button>

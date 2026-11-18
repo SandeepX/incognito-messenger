@@ -33,23 +33,44 @@ class NoteTest extends TestCase
         $this->assertFalse(collect($eveNotes['data'])->contains('id', $note['id']));
         $this->actingAs($eve)->getJson("/api/notes/{$note['id']}")->assertForbidden();
 
+        // A pending message request must not leak even the cloud marker.
+        $this->actingAs($alice)->postJson('/api/message-requests', [
+            'user_id' => $eve->id,
+            'body' => 'Hi Eve',
+        ])->assertCreated();
+        $requests = $this->actingAs($eve)->getJson('/api/message-requests')->json();
+        $requestUser = collect($requests['incoming']['data'])->firstWhere('user.id', $alice->id)['user'];
+        $this->assertFalse($requestUser['has_note']);
+        $this->assertNull($requestUser['note']);
+
+        $eveSearch = $this->actingAs($eve)->getJson('/api/users?q=alice')->json();
+        $eveRow = collect($eveSearch)->firstWhere('id', $alice->id);
+        $this->assertFalse($eveRow['has_note']);
+        $this->assertNull($eveRow['note']);
+
         // Accepting a friend request unlocks it.
         $this->befriend($alice, $bob);
         $bobNotes = $this->actingAs($bob)->getJson('/api/notes')->json();
         $this->assertTrue(collect($bobNotes['data'])->contains('id', $note['id']));
         $this->actingAs($bob)->getJson("/api/notes/{$note['id']}")->assertOk();
 
-        // Every place that renders Alice's avatar can show the cloud marker.
+        // Friends see the actual text in every place that renders the avatar.
         $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
-        $this->assertTrue(collect($friends['friends']['data'])->firstWhere('id', $alice->id)['has_note']);
+        $friendRow = collect($friends['friends']['data'])->firstWhere('id', $alice->id);
+        $this->assertTrue($friendRow['has_note']);
+        $this->assertSame('Coffee at 3pm?', $friendRow['note']);
 
         $search = $this->actingAs($bob)->getJson('/api/users?q=alice')->json();
-        $this->assertTrue(collect($search)->firstWhere('id', $alice->id)['has_note']);
+        $searchRow = collect($search)->firstWhere('id', $alice->id);
+        $this->assertTrue($searchRow['has_note']);
+        $this->assertSame('Coffee at 3pm?', $searchRow['note']);
 
         $conversationId = $this->actingAs($bob)
             ->postJson("/api/conversations/direct/{$alice->id}")->json('id');
         $conversations = $this->actingAs($bob)->getJson('/api/conversations')->json();
-        $this->assertTrue(collect($conversations)->firstWhere('id', $conversationId)['has_note']);
+        $chatRow = collect($conversations)->firstWhere('id', $conversationId);
+        $this->assertTrue($chatRow['has_note']);
+        $this->assertSame('Coffee at 3pm?', $chatRow['note']);
     }
 
     public function test_only_owner_can_edit_or_delete_a_note(): void
@@ -103,8 +124,12 @@ class NoteTest extends TestCase
         $alice = $this->userWithProfile('alice');
 
         $this->actingAs($alice)->postJson('/api/notes', ['content' => ''])->assertStatus(422);
-        $this->actingAs($alice)->postJson('/api/notes', ['content' => str_repeat('x', 301)])->assertStatus(422);
+        $this->actingAs($alice)->postJson('/api/notes', ['content' => str_repeat('x', 61)])->assertStatus(422);
         $this->assertDatabaseCount('notes', 0);
+
+        $this->actingAs($alice)->postJson('/api/notes', ['content' => str_repeat('x', 60)])
+            ->assertCreated()->assertJsonPath('content', str_repeat('x', 60));
+        $this->assertDatabaseCount('notes', 1);
     }
 
     public function test_note_edits_and_deletion_notify_friends(): void

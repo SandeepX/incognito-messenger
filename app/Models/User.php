@@ -109,6 +109,25 @@ class User extends Authenticatable
         return $this->friends()->whereKey($userId)->exists();
     }
 
+    /**
+     * Friend-safe note payload for list rows. Notes are private to the author
+     * and accepted friends, so a non-friend never sees even the cloud marker.
+     */
+    public function notePayload(int $viewerId): array
+    {
+        $note = $this->relationLoaded('activeNote')
+            ? $this->activeNote
+            : $this->activeNote()->first();
+
+        $visible = $note !== null
+            && ((int) $this->id === $viewerId || $this->isFriendsWith($viewerId));
+
+        return [
+            'has_note' => $visible,
+            'note' => $visible ? $note->content : null,
+        ];
+    }
+
     /** @return array<int, int> */
     public function friendIds(): array
     {

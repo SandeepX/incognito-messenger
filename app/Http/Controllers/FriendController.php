@@ -14,8 +14,10 @@ use Illuminate\Support\Facades\DB;
 
 class FriendController extends Controller
 {
-    private function userPayload(User $user): array
+    private function userPayload(User $user, ?int $viewerId = null): array
     {
+        $viewerId ??= auth()->id();
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -23,9 +25,7 @@ class FriendController extends Controller
             'avatar' => $user->avatarUrl(),
             'status' => $user->profile?->status,
             'bio' => $user->profile?->bio,
-            'has_note' => $user->relationLoaded('activeNote')
-                ? $user->activeNote !== null
-                : $user->activeNote()->exists(),
+            ...$user->notePayload($viewerId),
             ...$user->presencePayload(),
         ];
     }
@@ -37,13 +37,14 @@ class FriendController extends Controller
 
         $friends = $me->friends()->with(['profile', 'activeNote'])->latest('friendships.created_at')
             ->paginate(20)
-            ->through(fn (User $u) => $this->userPayload($u));
+            ->through(fn (User $u) => $this->userPayload($u, $me->id));
 
         $incoming = $me->receivedFriendRequests()->where('status', 'pending')
             ->with(['sender.profile', 'sender.activeNote'])->latest()->paginate(20)
             ->through(fn (FriendRequest $r) => [
                 'id' => $r->id,
-                'user' => $this->userPayload($r->sender),
+                'user' => $this->userPayload($r->sender, $me->id),
+                'note' => $r->note,
                 'created_at' => $r->created_at?->toISOString(),
             ]);
 
@@ -51,7 +52,8 @@ class FriendController extends Controller
             ->with(['recipient.profile', 'recipient.activeNote'])->latest()->paginate(20)
             ->through(fn (FriendRequest $r) => [
                 'id' => $r->id,
-                'user' => $this->userPayload($r->recipient),
+                'user' => $this->userPayload($r->recipient, $me->id),
+                'note' => $r->note,
                 'created_at' => $r->created_at?->toISOString(),
             ]);
 
@@ -71,7 +73,11 @@ class FriendController extends Controller
     {
         $data = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
+            'note' => ['nullable', 'string', 'max:160'],
         ]);
+
+        // Notes are optional: an omitted or blank note is stored as null.
+        $note = trim((string) ($data['note'] ?? '')) ?: null;
 
         $target = User::findOrFail($data['user_id']);
         $me = auth()->id();
@@ -100,7 +106,13 @@ class FriendController extends Controller
 
         if ($existing) {
             abort_if($existing->status === 'accepted', 422, 'You are already friends.');
-            $existing->update(['status' => 'pending', 'responded_at' => null, 'sender_id' => $me, 'recipient_id' => $target->id]);
+            $existing->update([
+                'status' => 'pending',
+                'responded_at' => null,
+                'sender_id' => $me,
+                'recipient_id' => $target->id,
+                'note' => $note,
+            ]);
             $friendRequest = $existing;
         } else {
             $friendRequest = FriendRequest::create([
@@ -108,6 +120,7 @@ class FriendController extends Controller
                 'recipient_id' => $target->id,
                 'pair_key' => $key,
                 'status' => 'pending',
+                'note' => $note,
             ]);
         }
 
@@ -117,9 +130,14 @@ class FriendController extends Controller
             'username' => auth()->user()->username,
             'avatar' => auth()->user()->avatarUrl(),
             'request_id' => $friendRequest->id,
+            'note' => $friendRequest->note,
         ]);
 
-        return response()->json(['status' => 'pending', 'id' => $friendRequest->id], 201);
+        return response()->json([
+            'status' => 'pending',
+            'id' => $friendRequest->id,
+            'note' => $friendRequest->note,
+        ], 201);
     }
 
     public function accept(FriendRequest $friendRequest): JsonResponse

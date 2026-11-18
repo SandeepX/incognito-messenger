@@ -5,18 +5,18 @@ A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel E
 ## Features
 
 - **Accounts & profiles** — registration, login/logout, throttling, editable name/email/username/bio/status and avatars.
-- **Friend graph** — send/accept/reject/cancel friend requests; only accepted friends appear in the Friends tab and may start a normal direct chat. One pending request per pair.
+- **Friend graph** — send/accept/reject/cancel friend requests with an optional note; only accepted friends appear in the Friends section and may start a normal direct chat. One pending request per pair.
 - **Message requests** — non-friends can send a short introduction with one message. The thread is hidden from normal chat lists until the recipient accepts; accepting also creates the friendship. The recipient alone can delete an incoming request; the sender alone can cancel one.
 - **Direct & group messages** — one conversation per pair, cursor-paginated history, latest-message previews, unread badges, typing whispers and presence.
-- **Read receipts** — sent → delivered → seen. A `message_reads` row is written only when a recipient actually opens the thread (never from a websocket receipt alone). Group messages show every reader, and receipts are included in every paginated message payload.
+- **Read receipts** — one grey tick for Sent, two blue ticks for Seen. A `message_reads` row is written only when a recipient actually opens the thread (never from a websocket receipt alone). Group messages show every reader, and receipts are included in every paginated message payload.
 - **Last-active presence** — green dot for “Active now”, relative text for recent visits, nothing after seven days. A 30-second heartbeat and socket connect/disconnect events persist `users.last_active_at`; the **Show active status** profile toggle hides both presence and the timestamp.
 - **Message sounds** — optional, on by default. A subtle tone plays for incoming messages (not for the focused chat, background-safe and deduplicated against your own socket echo) and a quieter one on successful send. Toggle it in **Profile → Message sounds**.
 - **Unsend** — sender-only. Unseen messages become a shared “unsent a message” placeholder on both sides; seen messages are removed only from the sender’s view. The server decides at request time from `message_reads`, and Reverb pushes the decision immediately.
 - **Private media & files** — images (JPEG/PNG/GIF/WebP) and documents (PDF, Word, Excel, TXT, CSV, ZIP) up to 20 MB each, max 5 per message. Everything is stored in a private MinIO bucket with generated names. Download/preview URLs are signed, expire after 5 minutes, and are generated only after a policy check.
-- **Notes** — one active 300-character note per user, shown as a cloud in the notes strip, visible only to the author and accepted friends, automatically hidden after 24 hours, with owner-only edit/delete and a small cloud marker on avatars when someone has a note.
+- **Notes** — one active 60-character note per user, shown as a thought cloud in the notes strip and above avatars in Friends and Chats. Notes are visible only to the author and accepted friends, disappear after 24 hours, and can be edited or deleted anytime. Clicking a friend's note opens their chat.
 - **Realtime** — new messages, read receipts, friend/message request events, accepts, notes, unread counts, conversation-list changes and group changes are pushed over Reverb. Request and notification counters update without a refresh.
 - **Authorization** — policies plus `routes/channels.php` decide who may read, write, download or subscribe. Channel authorization is re-checked live for groups, so removed members lose access immediately.
-- **Responsive UI** — chats stay in the left rail while Friends and Requests live in a right rail on desktop; they become a slide-over on smaller screens, where the chat list still drills down to a full chat. Includes an emoji picker, attachment progress/previews, an image lightbox and a notification center.
+- **Responsive UI** — Chats stay in a fixed-height, scrollable left sidebar; the right panel has Friends and Requests tabs, with online/offline presence, chat/remove actions, friend requests, sent requests and message requests. It opens from the people icon. On small screens the right panel and an open chat become full-screen drilldowns. Includes an emoji picker, attachment progress/previews, an image lightbox and a notification center.
 
 ## Stack
 

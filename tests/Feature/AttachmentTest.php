@@ -68,9 +68,14 @@ class AttachmentTest extends TestCase
             'attachments' => [UploadedFile::fake()->create('virus.exe', 10, 'application/x-msdownload')],
         ])->assertStatus(422)->assertJsonValidationErrors('attachments.0');
 
-        $this->actingAs($alice)->post("/api/conversations/{$conversationId}/messages", [
+        $oversized = $this->actingAs($alice)->post("/api/conversations/{$conversationId}/messages", [
             'attachments' => [UploadedFile::fake()->create('huge.pdf', 21000, 'application/pdf')],
         ])->assertStatus(422)->assertJsonValidationErrors('attachments.0');
+        $errors = $oversized->json('errors');
+        $this->assertSame(
+            "File can't be larger than 20 MB.",
+            $errors['attachments.0'][0],
+        );
 
         $this->assertDatabaseCount('message_attachments', 0);
         $this->assertSame(0, count(Storage::disk('minio')->allFiles()));

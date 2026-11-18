@@ -26,10 +26,10 @@ final class AttachmentUpload
     public static function messages(): array
     {
         return [
-            'attachments.*.max' => 'Each file must be smaller than '.self::MAX_LABEL.'.',
+            'attachments.*.max' => "File can't be larger than ".self::MAX_LABEL.'.',
             'attachments.*.mimes' => 'Unsupported file type. Allowed: images, PDF, Word, Excel, TXT, CSV and ZIP.',
             'attachments.*.file' => 'The attachment must be a valid file.',
-            'attachment.max' => 'The file must be smaller than '.self::MAX_LABEL.'.',
+            'attachment.max' => "File can't be larger than ".self::MAX_LABEL.'.',
             'attachment.mimes' => 'Unsupported file type. Allowed: images, PDF, Word, Excel, TXT, CSV and ZIP.',
         ];
     }

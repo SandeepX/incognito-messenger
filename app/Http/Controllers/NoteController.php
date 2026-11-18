@@ -62,7 +62,7 @@ class NoteController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'content' => ['required', 'string', 'max:300'],
+            'content' => ['required', 'string', 'max:60'],
         ]);
 
         // One active note per person: replace it instead of stacking duplicates.
@@ -87,7 +87,7 @@ class NoteController extends Controller
         $this->authorize('update', $note);
 
         $data = $request->validate([
-            'content' => ['required', 'string', 'max:300'],
+            'content' => ['required', 'string', 'max:60'],
         ]);
 
         $note->update([

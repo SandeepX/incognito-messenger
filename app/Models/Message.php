@@ -108,7 +108,7 @@ class Message extends Model
             'unsent_by' => $this->unsent_by ? (int) $this->unsent_by : null,
             'created_at' => $this->created_at?->toISOString(),
             'time' => $this->created_at?->format('g:i A'),
-            'status' => $unsent ? 'unsent' : ($seenBy ? 'seen' : 'delivered'),
+            'status' => $unsent ? 'unsent' : ($seenBy ? 'seen' : 'sent'),
             'seen_by' => $unsent ? [] : $seenBy,
             'attachments' => $attachments->map(fn (MessageAttachment $a) => $a->payload())->all(),
         ];

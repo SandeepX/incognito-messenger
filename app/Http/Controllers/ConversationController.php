@@ -61,7 +61,9 @@ class ConversationController extends Controller
                     'name' => $name,
                     'subtitle' => $subtitle,
                     'avatar' => $avatar,
-                    'has_note' => $other?->activeNote !== null,
+                    ...($other
+                        ? $other->notePayload($me)
+                        : ['has_note' => false, 'note' => null]),
                     'last_message' => $last?->payload($me),
                     'last_at' => $last?->created_at?->toISOString(),
                 ];

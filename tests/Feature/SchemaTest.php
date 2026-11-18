@@ -22,7 +22,7 @@ class SchemaTest extends TestCase
             'messages' => ['conversation_id', 'sender_id', 'body', 'is_unsent', 'unsent_at', 'unsent_by', 'deleted_for'],
             'message_reads' => ['message_id', 'user_id', 'read_at'],
             'friendships' => ['user_id', 'friend_id', 'pair_key'],
-            'friend_requests' => ['sender_id', 'recipient_id', 'pair_key', 'status'],
+            'friend_requests' => ['sender_id', 'recipient_id', 'pair_key', 'status', 'note'],
             'message_requests' => ['sender_id', 'recipient_id', 'conversation_id', 'pair_key', 'status'],
             'message_attachments' => ['message_id', 'storage_path', 'mime_type', 'file_size', 'attachment_type'],
             'notes' => ['user_id', 'content', 'expires_at'],
