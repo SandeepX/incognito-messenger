@@ -10,10 +10,10 @@ A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel E
 - **Direct & group messages** — one conversation per pair, cursor-paginated history, latest-message previews, unread badges, typing whispers and presence.
 - **Read receipts** — sent → delivered → seen. A `message_reads` row is written only when a recipient actually opens the thread (never from a websocket receipt alone). Group messages show every reader, and receipts are included in every paginated message payload.
 - **Private media & files** — images (JPEG/PNG/GIF/WebP) and documents (PDF, Word, Excel, TXT, CSV, ZIP) up to 20 MB each, max 5 per message. Everything is stored in a private MinIO bucket with generated names. Download/preview URLs are signed, expire after 5 minutes, and are generated only after a policy check.
-- **Notes** — one active 300-character note per user, visible only to the author and accepted friends, automatically hidden after 24 hours, with owner-only edit/delete.
+- **Notes** — one active 300-character note per user, shown as a cloud in the notes strip, visible only to the author and accepted friends, automatically hidden after 24 hours, with owner-only edit/delete and a small cloud marker on avatars when someone has a note.
 - **Realtime** — new messages, read receipts, friend/message request events, accepts, notes, unread counts, conversation-list changes and group changes are pushed over Reverb. Request and notification counters update without a refresh.
 - **Authorization** — policies plus `routes/channels.php` decide who may read, write, download or subscribe. Channel authorization is re-checked live for groups, so removed members lose access immediately.
-- **Responsive UI** — two-pane Messenger layout on desktop/tablet; list → chat drill-down on mobile. Includes an emoji picker, attachment progress/previews, an image lightbox and a notification center.
+- **Responsive UI** — chats stay in the left rail while Friends and Requests live in a right rail on desktop; they become a slide-over on smaller screens, where the chat list still drills down to a full chat. Includes an emoji picker, attachment progress/previews, an image lightbox and a notification center.
 
 ## Stack
 

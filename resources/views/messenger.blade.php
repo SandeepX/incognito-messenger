@@ -24,6 +24,17 @@
             </button>
         </div>
 
+        <!-- Small-screen entry points; harmless on desktop where the right
+             panel is already visible. -->
+        <div class="left-shortcuts">
+            <button id="friends-shortcut" class="shortcut-btn" type="button">
+                👥 Friends<span id="friend-shortcut-badge" class="badge" hidden></span>
+            </button>
+            <button id="requests-shortcut" class="shortcut-btn" type="button">
+                ✉️ Requests<span id="request-shortcut-badge" class="badge" hidden></span>
+            </button>
+        </div>
+
         <div class="me-card">
             <img class="avatar" src="{{ $me->avatarUrl() }}" alt="Your avatar">
             <div class="who">
@@ -53,14 +64,6 @@
             </div>
         </section>
 
-        <div class="tabs" role="tablist">
-            <button class="tab active" type="button" data-tab="chats" role="tab">Chats</button>
-            <button class="tab" type="button" data-tab="friends" role="tab">Friends</button>
-            <button class="tab" type="button" data-tab="requests" role="tab">
-                Requests<span id="request-badge" class="badge" hidden></span>
-            </button>
-        </div>
-
         <!-- ---------------- Conversations ---------------- -->
         <div id="pane-chats" class="list-pane">
             <div class="section-head">
@@ -70,31 +73,6 @@
             <ul id="conversation-list" class="conv-list">
                 <li class="empty-list">Loading conversations…</li>
             </ul>
-        </div>
-
-        <!-- ---------------- Friends ---------------- -->
-        <div id="pane-friends" class="list-pane" hidden>
-            <div class="section-head"><h2>Friends</h2><span id="friends-count" class="muted"></span></div>
-            <ul id="friend-list" class="conv-list compact-list"><li class="empty-list">Loading friends…</li></ul>
-
-            <div class="section-head"><h2>Friend Requests</h2><span id="friend-incoming-count" class="muted"></span></div>
-            <ul id="friend-request-list" class="conv-list compact-list"></ul>
-
-            <div class="section-head"><h2>Sent Requests</h2></div>
-            <ul id="friend-sent-list" class="conv-list compact-list"></ul>
-
-            <div class="section-head"><h2>Find People</h2></div>
-            <input id="friend-search" class="inline-search" type="text" autocomplete="off" placeholder="Search registered users">
-            <div id="friend-results" class="search-results static-results"></div>
-        </div>
-
-        <!-- ---------------- Message requests ---------------- -->
-        <div id="pane-requests" class="list-pane" hidden>
-            <div class="section-head"><h2>Message Requests</h2><span id="message-request-count" class="muted"></span></div>
-            <ul id="message-request-list" class="conv-list compact-list"><li class="empty-list">No message requests.</li></ul>
-
-            <div class="section-head"><h2>Sent Requests</h2></div>
-            <ul id="message-sent-list" class="conv-list compact-list"></ul>
         </div>
     </aside>
 
@@ -110,7 +88,10 @@
         <section id="chat" class="chat">
             <header class="chat-head">
                 <button id="chat-back" class="back-btn" type="button" aria-label="Back">‹</button>
-                <img id="chat-avatar" class="avatar" src="{{ asset('images/default-avatar.svg') }}" alt="">
+                <span class="avatar-wrap">
+                    <img id="chat-avatar" class="avatar" src="{{ asset('images/default-avatar.svg') }}" alt="">
+                    <span id="chat-note-orb" class="note-orb" title="Active note" hidden>☁</span>
+                </span>
                 <div class="who">
                     <strong id="chat-name">—</strong>
                     <small id="chat-subtitle"></small>
@@ -143,6 +124,42 @@
             <div class="composer-hint">Enter to send · Shift + Enter for a new line · Files up to 20 MB</div>
         </section>
     </main>
+
+    <!-- ---------------- Right rail: friends + requests ---------------- -->
+    <aside class="right-panel" id="right-panel">
+        <div class="right-head">
+            <button id="right-back" class="back-btn" type="button" aria-label="Back to chats">‹</button>
+            <div class="tabs" role="tablist">
+                <button class="tab active" type="button" data-tab="friends" role="tab">Friends</button>
+                <button class="tab" type="button" data-tab="requests" role="tab">
+                    Requests<span id="request-badge" class="badge" hidden></span>
+                </button>
+            </div>
+        </div>
+
+        <div id="pane-friends" class="list-pane right-pane">
+            <div class="section-head"><h2>Friends</h2><span id="friends-count" class="muted"></span></div>
+            <ul id="friend-list" class="conv-list compact-list"><li class="empty-list">Loading friends…</li></ul>
+
+            <div class="section-head"><h2>Friend Requests</h2><span id="friend-incoming-count" class="muted"></span></div>
+            <ul id="friend-request-list" class="conv-list compact-list"></ul>
+
+            <div class="section-head"><h2>Sent Requests</h2></div>
+            <ul id="friend-sent-list" class="conv-list compact-list"></ul>
+
+            <div class="section-head"><h2>Find People</h2></div>
+            <input id="friend-search" class="inline-search" type="text" autocomplete="off" placeholder="Search registered users">
+            <div id="friend-results" class="search-results static-results"></div>
+        </div>
+
+        <div id="pane-requests" class="list-pane right-pane" hidden>
+            <div class="section-head"><h2>Message Requests</h2><span id="message-request-count" class="muted"></span></div>
+            <ul id="message-request-list" class="conv-list compact-list"><li class="empty-list">No message requests.</li></ul>
+
+            <div class="section-head"><h2>Sent Requests</h2></div>
+            <ul id="message-sent-list" class="conv-list compact-list"></ul>
+        </div>
+    </aside>
 </div>
 
 <!-- New group -->

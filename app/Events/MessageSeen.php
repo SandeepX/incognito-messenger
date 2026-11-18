@@ -14,7 +14,12 @@ class MessageSeen implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public MessageRead $read) {}
+    /**
+     * @param  array<int, int>  $counts  Unread counts for the reader, so a
+     *                                   missed private-channel event cannot
+     *                                   leave a stale badge in the chat list.
+     */
+    public function __construct(public MessageRead $read, public array $counts = []) {}
 
     public function broadcastOn(): Channel
     {
@@ -37,6 +42,7 @@ class MessageSeen implements ShouldBroadcastNow
             'name' => $user?->name,
             'avatar' => $user?->avatarUrl(),
             'read_at' => $this->read->read_at?->toISOString(),
+            'counts' => $this->counts,
         ];
     }
 }

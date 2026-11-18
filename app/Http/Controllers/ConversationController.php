@@ -29,6 +29,7 @@ class ConversationController extends Controller
             })
             ->with([
                 'participants.profile',
+                'participants.activeNote',
                 'group' => fn ($q) => $q->withCount('members'),
                 'latestMessage.sender.profile',
             ])
@@ -59,6 +60,7 @@ class ConversationController extends Controller
                     'name' => $name,
                     'subtitle' => $subtitle,
                     'avatar' => $avatar,
+                    'has_note' => $other?->activeNote !== null,
                     'last_message' => $last?->payload(),
                     'last_at' => $last?->created_at?->toISOString(),
                 ];
@@ -109,12 +111,16 @@ class ConversationController extends Controller
             $conversation->participants()->updateExistingPivot($me, ['last_read_at' => now()]);
         });
 
+        // Compute once: the receipts, the cross-tab event and the HTTP
+        // response must all agree, even if a websocket event is missed.
+        $counts = UnreadCounter::for($me);
+
         foreach ($newReads as $read) {
-            broadcast(new MessageSeen($read));
+            broadcast(new MessageSeen($read, $counts));
         }
 
         // Other tabs of the same user should drop their badges too.
-        broadcast(new UnreadCountsUpdated($me, UnreadCounter::for($me)));
+        broadcast(new UnreadCountsUpdated($me, $counts));
 
         $page = $conversation->messages()
             ->with(['sender.profile', 'reads.user.profile', 'attachments'])
@@ -125,6 +131,8 @@ class ConversationController extends Controller
             'data' => collect($page->items())->map(fn (Message $m) => $m->payload())->all(),
             'next_cursor' => $page->nextCursor()?->encode(),
             'conversation_id' => $conversation->id,
+            'unread' => $counts[$conversation->id] ?? 0,
+            'counts' => $counts,
         ]);
     }
 

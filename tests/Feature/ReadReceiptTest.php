@@ -41,6 +41,9 @@ class ReadReceiptTest extends TestCase
         $history = $this->actingAs($bob)->getJson("/api/conversations/{$conversationId}")->assertOk()->json();
         $received = collect($history['data'])->firstWhere('id', $messageId);
 
+        // The response itself clears the badge even if a websocket event is missed.
+        $this->assertSame(0, $history['unread']);
+        $this->assertSame(0, $history['counts'][$conversationId] ?? 0);
         $this->assertSame('seen', $received['status']);
         $this->assertSame($bob->id, $received['seen_by'][0]['user_id']);
         $this->assertDatabaseHas('message_reads', [
@@ -51,6 +54,8 @@ class ReadReceiptTest extends TestCase
         Event::assertDispatched(
             MessageSeen::class,
             fn (MessageSeen $event) => $event->read->message_id === $messageId
+                && $event->read->user_id === $bob->id
+                && ($event->counts[$conversationId] ?? 0) === 0
                 && $event->broadcastOn()->name === "private-conversation.{$conversationId}",
         );
 

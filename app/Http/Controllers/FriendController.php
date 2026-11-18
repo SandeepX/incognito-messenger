@@ -23,6 +23,9 @@ class FriendController extends Controller
             'avatar' => $user->avatarUrl(),
             'status' => $user->profile?->status,
             'bio' => $user->profile?->bio,
+            'has_note' => $user->relationLoaded('activeNote')
+                ? $user->activeNote !== null
+                : $user->activeNote()->exists(),
         ];
     }
 
@@ -31,12 +34,12 @@ class FriendController extends Controller
     {
         $me = auth()->user();
 
-        $friends = $me->friends()->with('profile')->latest('friendships.created_at')
+        $friends = $me->friends()->with(['profile', 'activeNote'])->latest('friendships.created_at')
             ->paginate(20)
             ->through(fn (User $u) => $this->userPayload($u));
 
         $incoming = $me->receivedFriendRequests()->where('status', 'pending')
-            ->with('sender.profile')->latest()->paginate(20)
+            ->with(['sender.profile', 'sender.activeNote'])->latest()->paginate(20)
             ->through(fn (FriendRequest $r) => [
                 'id' => $r->id,
                 'user' => $this->userPayload($r->sender),
@@ -44,7 +47,7 @@ class FriendController extends Controller
             ]);
 
         $outgoing = $me->sentFriendRequests()->where('status', 'pending')
-            ->with('recipient.profile')->latest()->paginate(20)
+            ->with(['recipient.profile', 'recipient.activeNote'])->latest()->paginate(20)
             ->through(fn (FriendRequest $r) => [
                 'id' => $r->id,
                 'user' => $this->userPayload($r->recipient),

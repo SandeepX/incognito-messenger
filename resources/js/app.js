@@ -107,6 +107,24 @@ function isOnline(userId) {
     return state.online.has(Number(userId));
 }
 
+/** Consistent avatar + small cloud marker for users with an active note. */
+function avatarWithNote(avatar, hasNote, size = '') {
+    const orb = hasNote
+        ? `<span class="note-orb${size === 'sm' ? ' sm' : ''}" title="Active note">☁</span>`
+        : '';
+
+    return `<span class="avatar-wrap"><img class="avatar${size ? ' '+size : ''}" src="${esc(avatar)}" alt="">${orb}</span>`;
+}
+
+function applyUnreadCounts(counts) {
+    if (! counts) return;
+
+    state.conversations.forEach((conversation) => {
+        conversation.unread = counts[conversation.id] ?? 0;
+    });
+    renderConversationList();
+}
+
 function isNearBottom(threshold = 80) {
     const box = $('messages');
     return box.scrollHeight - box.scrollTop - box.clientHeight <= threshold;
@@ -180,10 +198,7 @@ window.Echo.join('online')
 
 window.Echo.private(`user.${state.me.id}`)
     .listen('.UnreadCountsUpdated', (event) => {
-        state.conversations.forEach((c) => {
-            c.unread = event.counts?.[c.id] ?? 0;
-        });
-        renderConversationList();
+        applyUnreadCounts(event.counts);
     })
     .listen('.ConversationsUpdated', () => {
         loadConversations();
@@ -193,10 +208,11 @@ window.Echo.private(`user.${state.me.id}`)
         updateNotificationBadge();
         toast(notificationText(event));
         if ($('notifications-modal').classList.contains('show')) loadNotifications();
-        // Friend/request/note counters can all change from one event.
+        // Friend/request/note counters and avatar clouds can all change here.
         loadFriends();
         loadMessageRequests();
         loadNotes();
+        loadConversations();
     });
 
 window.Echo.connector.pusher.connection.bind('state_change', (states) => {
@@ -215,6 +231,17 @@ window.Echo.connector.pusher.connection.bind('state_change', (states) => {
 async function loadConversations() {
     try {
         state.conversations = await api('/api/conversations');
+
+        // Keep the open header in sync when a note appears/disappears.
+        if (state.active) {
+            const fresh = state.conversations.find((c) => c.id === state.active.id);
+            if (fresh) {
+                state.active.has_note = fresh.has_note;
+                state.active.avatar = fresh.avatar;
+                updateChatHeader();
+            }
+        }
+
         renderConversationList();
     } catch (error) {
         toast(error.message);
@@ -239,7 +266,7 @@ function renderConversationList() {
 
         return `
             <li class="conv-item ${state.active?.id === c.id ? 'active' : ''}" data-id="${c.id}">
-                <img class="avatar" src="${esc(c.avatar)}" alt="">
+                ${avatarWithNote(c.avatar, c.has_note)}
                 <div class="body">
                     <div class="conv-row">
                         <span class="conv-name">${dot}${esc(c.name)}</span>
@@ -260,7 +287,7 @@ $('conversation-list').addEventListener('click', (event) => {
 });
 
 $('chat-back').addEventListener('click', () => {
-    $('app').classList.remove('show-chat');
+    $('app').classList.remove('show-chat', 'show-right');
 });
 
 /* ================================================================
@@ -279,7 +306,7 @@ function renderUserResults(users, container, onPick) {
         const button = document.createElement('button');
         button.type = 'button';
         button.innerHTML = `
-            <img class="avatar sm" src="${esc(user.avatar)}" alt="">
+            ${avatarWithNote(user.avatar, user.has_note, 'sm')}
             <span class="who"><strong>${esc(user.name)}</strong><small>@${esc(user.username)}</small></span>`;
         button.addEventListener('click', () => onPick(user));
         container.appendChild(button);
@@ -336,6 +363,7 @@ function updateChatHeader() {
         ? esc(state.active.subtitle ?? 'Group conversation')
         : `<span class="status-dot ${online ? 'online' : ''}"></span>${online ? 'Online' : 'Offline'}`;
     $('chat-avatar').src = state.active.avatar ?? '/images/default-avatar.svg';
+    $('chat-note-orb').hidden = state.active.type !== 'direct' || ! state.active.has_note;
     $('group-info-btn').hidden = state.active.type !== 'group';
 }
 
@@ -465,7 +493,7 @@ function handleAccessRevoked(conversationId) {
     state.active = null;
     state.activeGroup = null;
     $('chat').classList.remove('open');
-    $('app').classList.remove('show-chat');
+    $('app').classList.remove('show-chat', 'show-right');
     $('empty-chat').style.display = '';
     $('settings-modal').classList.remove('show');
     toast('You no longer have access to this conversation.');
@@ -474,6 +502,7 @@ function handleAccessRevoked(conversationId) {
 
 async function openConversation(id) {
     if (state.active?.id === id) {
+        $('app').classList.remove('show-right');
         $('app').classList.add('show-chat');
         return;
     }
@@ -492,6 +521,7 @@ async function openConversation(id) {
 
     $('empty-chat').style.display = 'none';
     $('chat').classList.add('open');
+    $('app').classList.remove('show-right');
     $('app').classList.add('show-chat');
     $('messages').innerHTML = '';
     $('jump-latest').hidden = true;
@@ -509,6 +539,16 @@ async function openConversation(id) {
         const history = await api(`/api/conversations/${id}`);
         if (state.active?.id !== id) return; // user switched while loading
         state.cursor = history.next_cursor;
+
+        // The HTTP response carries the authoritative counts, so a missed
+        // websocket event can never leave a stale badge in the chat list.
+        if (history.counts) {
+            applyUnreadCounts(history.counts);
+        } else if (conversation) {
+            conversation.unread = history.unread ?? 0;
+            renderConversationList();
+        }
+
         [...history.data].reverse().forEach((message) => appendMessage(message, false));
         scrollToLatestRow();
     } catch (error) {
@@ -540,11 +580,24 @@ async function openConversation(id) {
             hideTyping();
         })
         .listen('.MessageSeen', (event) => {
+            // The reader's own receipt clears the sidebar badge immediately.
+            // This runs even when the row is not rendered (e.g. another tab).
+            if (Number(event.user_id) === state.me.id) {
+                if (event.counts) {
+                    applyUnreadCounts(event.counts);
+                } else {
+                    const own = state.conversations.find((c) => c.id === event.conversation_id);
+                    if (own && own.unread) {
+                        own.unread = 0;
+                        renderConversationList();
+                    }
+                }
+                return;
+            }
+
             const row = [...$('messages').querySelectorAll('.msg-row')]
                 .find((el) => Number(el.dataset.id) === Number(event.message_id));
             if (! row) return;
-
-            if (event.user_id === state.me.id) return; // own read is implicit
 
             const reader = {
                 user_id: event.user_id,
@@ -719,7 +772,7 @@ function renderGroupMemberChoices(users) {
         row.className = 'member-row';
         const selected = state.selectedMembers.has(user.id);
         row.innerHTML = `
-            <img class="avatar sm" src="${esc(user.avatar)}" alt="">
+            ${avatarWithNote(user.avatar, user.has_note, 'sm')}
             <span class="who">${esc(user.name)}<small>@${esc(user.username)}</small></span>
             <button type="button" class="btn ${selected ? 'primary' : ''}" data-id="${user.id}">${selected ? '✓ Added' : 'Add'}</button>`;
         row.querySelector('button').addEventListener('click', (event) => {
@@ -893,22 +946,43 @@ document.querySelectorAll('.backdrop').forEach((backdrop) => {
 });
 
 /* ================================================================
- * Sidebar tabs
+ * Right rail navigation
  * ================================================================ */
+
+const compactLayout = () => window.matchMedia('(max-width: 1100px)').matches;
 
 function switchTab(tab) {
     state.activeTab = tab;
+
     document.querySelectorAll('.tab').forEach((button) => {
         button.classList.toggle('active', button.dataset.tab === tab);
     });
-    ['chats', 'friends', 'requests'].forEach((name) => {
+
+    // Conversations always stay in the left pane; only the right rail changes.
+    ['friends', 'requests'].forEach((name) => {
         $(`pane-${name}`).hidden = name !== tab;
     });
+
+    if (tab === 'chats') {
+        $('app').classList.remove('show-right');
+        return;
+    }
+
+    // On smaller screens the rail slides over the list/chat instead of
+    // squeezing three columns into one viewport.
+    if (compactLayout()) {
+        $('app').classList.add('show-right');
+        $('app').classList.remove('show-chat');
+    }
 }
 
 document.querySelectorAll('.tab').forEach((button) => {
     button.addEventListener('click', () => switchTab(button.dataset.tab));
 });
+
+$('friends-shortcut').addEventListener('click', () => switchTab('friends'));
+$('requests-shortcut').addEventListener('click', () => switchTab('requests'));
+$('right-back').addEventListener('click', () => switchTab('chats'));
 
 /* ================================================================
  * Notes (24-hour, friends only)
@@ -929,13 +1003,15 @@ function renderNotes() {
     const mine = state.notes.find((note) => note.is_mine);
 
     const cards = [`<div class="note-card add" data-add="1" title="Add a note">
-        <span class="plus">＋</span><span>${mine ? 'Edit note' : 'Add note'}</span>
+        <div class="note-cloud"><span class="plus">＋</span><span class="note-text">${mine ? 'Edit note' : 'Add note'}</span></div>
     </div>`];
 
     state.notes.filter((note) => ! note.is_mine).forEach((note) => {
         cards.push(`<div class="note-card" data-note="${note.id}" title="${esc(note.user.name)}'s note">
-            <img class="avatar" src="${esc(note.user.avatar)}" alt="">
-            <span>${esc(note.content)}</span>
+            <div class="note-cloud">
+                <img class="avatar" src="${esc(note.user.avatar)}" alt="">
+                <span class="note-text">☁ ${esc(note.content)}</span>
+            </div>
         </div>`);
     });
 
@@ -1048,13 +1124,16 @@ async function loadFriends() {
     try {
         const data = await api('/api/friends');
         state.friends = data.friends?.data ?? [];
+        const incomingCount = data.counts?.incoming ?? 0;
         $('friends-count').textContent = data.counts?.friends ?? '';
-        $('friend-incoming-count').textContent = data.counts?.incoming ?? '';
+        $('friend-incoming-count').textContent = incomingCount;
+        $('friend-shortcut-badge').hidden = ! incomingCount;
+        $('friend-shortcut-badge').textContent = incomingCount > 99 ? '99+' : String(incomingCount);
 
         const list = $('friend-list');
         list.innerHTML = state.friends.length ? state.friends.map((friend) => `
             <li class="conv-item" data-friend="${friend.id}">
-                <img class="avatar" src="${esc(friend.avatar)}" alt="">
+                ${avatarWithNote(friend.avatar, friend.has_note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(friend.name)}</span></div>
                     <div class="conv-bottom">
@@ -1070,7 +1149,7 @@ async function loadFriends() {
         const incoming = data.incoming?.data ?? [];
         $('friend-request-list').innerHTML = incoming.length ? incoming.map((item) => `
             <li class="conv-item">
-                <img class="avatar" src="${esc(item.user.avatar)}" alt="">
+                ${avatarWithNote(item.user.avatar, item.user.has_note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span>
                         <span class="conv-time">${esc(formatShortTime(item.created_at))}</span></div>
@@ -1086,7 +1165,7 @@ async function loadFriends() {
         const outgoing = data.outgoing?.data ?? [];
         $('friend-sent-list').innerHTML = outgoing.length ? outgoing.map((item) => `
             <li class="conv-item">
-                <img class="avatar" src="${esc(item.user.avatar)}" alt="">
+                ${avatarWithNote(item.user.avatar, item.user.has_note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span></div>
                     <div class="conv-bottom"><span class="conv-preview">@${esc(item.user.username)} · Pending</span>
@@ -1192,13 +1271,16 @@ async function loadMessageRequests() {
         const data = await api('/api/message-requests');
         state.messageRequests = data;
         const total = data.counts?.incoming ?? 0;
+        const label = total > 99 ? '99+' : String(total);
         $('message-request-count').textContent = total ? `${total} new` : '';
         $('request-badge').hidden = ! total;
-        $('request-badge').textContent = total;
+        $('request-badge').textContent = label;
+        $('request-shortcut-badge').hidden = ! total;
+        $('request-shortcut-badge').textContent = label;
 
         $('message-request-list').innerHTML = data.incoming?.data?.length ? data.incoming.data.map((item) => `
             <li class="conv-item" data-request="${item.id}">
-                <img class="avatar" src="${esc(item.user.avatar)}" alt="">
+                ${avatarWithNote(item.user.avatar, item.user.has_note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span>
                         <span class="conv-time">${esc(formatShortTime(item.created_at))}</span></div>
@@ -1208,7 +1290,7 @@ async function loadMessageRequests() {
 
         $('message-sent-list').innerHTML = data.sent?.data?.length ? data.sent.data.map((item) => `
             <li class="conv-item" data-request="${item.id}">
-                <img class="avatar" src="${esc(item.user.avatar)}" alt="">
+                ${avatarWithNote(item.user.avatar, item.user.has_note)}
                 <div class="body">
                     <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span></div>
                     <div class="conv-bottom"><span class="conv-preview">${esc(item.preview)}</span></div>
@@ -1223,7 +1305,7 @@ function openRequestComposer(user) {
     state.currentRequest = { mode: 'new', user };
     $('request-details').innerHTML = `
         <div class="member-row">
-            <img class="avatar" src="${esc(user.avatar)}" alt="">
+            ${avatarWithNote(user.avatar, user.has_note)}
             <span class="who">${esc(user.name)}<small>@${esc(user.username)}</small></span>
         </div>
         <p class="muted">You are not friends yet. Send a short message request — they can accept it to start a normal chat.</p>`;
@@ -1246,7 +1328,7 @@ async function openRequestPreview(id) {
 
         $('request-details').innerHTML = `
             <div class="member-row">
-                <img class="avatar" src="${esc(request.user.avatar)}" alt="">
+                ${avatarWithNote(request.user.avatar, request.user.has_note)}
                 <span class="who">${esc(request.user.name)}
                     <small>@${esc(request.user.username)}${request.user.bio ? ' · ' + esc(request.user.bio) : ''}</small></span>
             </div>
@@ -1347,6 +1429,8 @@ function notificationText(event) {
         case 'message_request_deleted': return `${name} deleted your message request`;
         case 'message_request_cancelled': return `${name} cancelled their message request`;
         case 'note_posted': return `${name} posted a note`;
+        case 'note_updated': return `${name} updated their note`;
+        case 'note_deleted': return `${name} removed their note`;
         default: return 'New notification';
     }
 }

@@ -18,7 +18,7 @@ class UserSearchController extends Controller
         $friendIds = array_flip(auth()->user()->friendIds());
 
         $users = User::query()
-            ->with('profile')
+            ->with(['profile', 'activeNote'])
             ->whereKeyNot($me)
             ->when($query !== '', function ($q) use ($query) {
                 $q->where(function ($inner) use ($query) {
@@ -42,6 +42,7 @@ class UserSearchController extends Controller
             'username' => $user->username,
             'avatar' => $user->avatarUrl(),
             'is_friend' => isset($friendIds[$user->id]),
+            'has_note' => $user->activeNote !== null,
             'conversation_id' => $conversationIds[Conversation::directKey($me, $user->id)] ?? null,
         ]));
     }

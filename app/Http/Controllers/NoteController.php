@@ -16,6 +16,7 @@ class NoteController extends Controller
 
         return [
             'id' => $note->id,
+            'user_id' => $user->id,
             'content' => $note->content,
             'created_at' => $note->created_at?->toISOString(),
             'expires_at' => $note->expires_at?->toISOString(),
@@ -76,15 +77,7 @@ class NoteController extends Controller
         });
 
         $note->load('user.profile');
-
-        foreach (auth()->user()->friendIds() as $friendId) {
-            Notifier::send($friendId, 'note_posted', [
-                'user_id' => auth()->id(),
-                'name' => auth()->user()->name,
-                'avatar' => auth()->user()->avatarUrl(),
-                'preview' => $note->content,
-            ]);
-        }
+        $this->notifyFriends('note_posted', $note);
 
         return response()->json($this->payload($note), 201);
     }
@@ -102,6 +95,7 @@ class NoteController extends Controller
             'expires_at' => now()->addDay(),
         ]);
         $note->load('user.profile');
+        $this->notifyFriends('note_updated', $note);
 
         return response()->json($this->payload($note));
     }
@@ -111,7 +105,25 @@ class NoteController extends Controller
         $this->authorize('delete', $note);
 
         $note->delete();
+        $this->notifyFriends('note_deleted', $note);
 
         return response()->json(['status' => 'deleted']);
+    }
+
+    /** Keep friends' note clouds and avatar indicators in sync in realtime. */
+    private function notifyFriends(string $type, Note $note): void
+    {
+        $user = auth()->user();
+
+        foreach ($user->friendIds() as $friendId) {
+            Notifier::send($friendId, $type, [
+                'user_id' => $user->id,
+                'name' => $user->name,
+                'username' => $user->username,
+                'avatar' => $user->avatarUrl(),
+                'note_id' => $note->id,
+                'preview' => $note->content,
+            ]);
+        }
     }
 }

@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Events\NotificationCreated;
 use App\Models\Note;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\ChecksChannels;
 use Tests\Support\CreatesUsers;
 use Tests\TestCase;
@@ -36,6 +38,18 @@ class NoteTest extends TestCase
         $bobNotes = $this->actingAs($bob)->getJson('/api/notes')->json();
         $this->assertTrue(collect($bobNotes['data'])->contains('id', $note['id']));
         $this->actingAs($bob)->getJson("/api/notes/{$note['id']}")->assertOk();
+
+        // Every place that renders Alice's avatar can show the cloud marker.
+        $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
+        $this->assertTrue(collect($friends['friends']['data'])->firstWhere('id', $alice->id)['has_note']);
+
+        $search = $this->actingAs($bob)->getJson('/api/users?q=alice')->json();
+        $this->assertTrue(collect($search)->firstWhere('id', $alice->id)['has_note']);
+
+        $conversationId = $this->actingAs($bob)
+            ->postJson("/api/conversations/direct/{$alice->id}")->json('id');
+        $conversations = $this->actingAs($bob)->getJson('/api/conversations')->json();
+        $this->assertTrue(collect($conversations)->firstWhere('id', $conversationId)['has_note']);
     }
 
     public function test_only_owner_can_edit_or_delete_a_note(): void
@@ -58,11 +72,16 @@ class NoteTest extends TestCase
             ->assertOk()->assertJsonPath('content', 'Edited');
         $this->actingAs($alice)->deleteJson("/api/notes/{$second['id']}")->assertOk();
         $this->assertDatabaseCount('notes', 0);
+
+        $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
+        $this->assertFalse(collect($friends['friends']['data'])->firstWhere('id', $alice->id)['has_note']);
     }
 
     public function test_expired_notes_are_hidden_even_for_the_owner(): void
     {
         $alice = $this->userWithProfile('alice');
+        $bob = $this->userWithProfile('bob');
+        $this->befriend($alice, $bob);
 
         $note = Note::create([
             'user_id' => $alice->id,
@@ -73,6 +92,10 @@ class NoteTest extends TestCase
         $this->actingAs($alice)->getJson('/api/notes')->assertOk()
             ->assertJsonMissing(['id' => $note->id]);
         $this->actingAs($alice)->getJson("/api/notes/{$note->id}")->assertForbidden();
+
+        // An expired note must not leave a cloud marker on the avatar either.
+        $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
+        $this->assertFalse(collect($friends['friends']['data'])->firstWhere('id', $alice->id)['has_note']);
     }
 
     public function test_note_content_is_validated(): void
@@ -82,5 +105,29 @@ class NoteTest extends TestCase
         $this->actingAs($alice)->postJson('/api/notes', ['content' => ''])->assertStatus(422);
         $this->actingAs($alice)->postJson('/api/notes', ['content' => str_repeat('x', 301)])->assertStatus(422);
         $this->assertDatabaseCount('notes', 0);
+    }
+
+    public function test_note_edits_and_deletion_notify_friends(): void
+    {
+        Event::fake([NotificationCreated::class]);
+
+        $alice = $this->userWithProfile('alice');
+        $bob = $this->userWithProfile('bob');
+        $this->befriend($alice, $bob);
+
+        $note = $this->actingAs($alice)->postJson('/api/notes', ['content' => 'Original'])->assertCreated()->json();
+        $this->actingAs($alice)->putJson("/api/notes/{$note['id']}", ['content' => 'Edited'])->assertOk();
+        $this->actingAs($alice)->deleteJson("/api/notes/{$note['id']}")->assertOk();
+
+        Event::assertDispatched(
+            NotificationCreated::class,
+            fn (NotificationCreated $e) => $e->notification->user_id === $bob->id
+                && $e->notification->type === 'note_updated',
+        );
+        Event::assertDispatched(
+            NotificationCreated::class,
+            fn (NotificationCreated $e) => $e->notification->user_id === $bob->id
+                && $e->notification->type === 'note_deleted',
+        );
     }
 }

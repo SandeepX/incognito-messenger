@@ -38,6 +38,9 @@ class MessageRequestController extends Controller
                 'avatar' => $other->avatarUrl(),
                 'bio' => $other->profile?->bio,
                 'status_text' => $other->profile?->status,
+                'has_note' => $other->relationLoaded('activeNote')
+                    ? $other->activeNote !== null
+                    : $other->activeNote()->exists(),
             ],
             'preview' => $request->body,
             'created_at' => $request->created_at?->toISOString(),
@@ -49,11 +52,11 @@ class MessageRequestController extends Controller
         $me = auth()->id();
 
         $incoming = MessageRequest::where('recipient_id', $me)->where('status', 'pending')
-            ->with('sender.profile')->latest()->paginate(20)
+            ->with(['sender.profile', 'sender.activeNote'])->latest()->paginate(20)
             ->through(fn (MessageRequest $r) => $this->payload($r, 'incoming'));
 
         $sent = MessageRequest::where('sender_id', $me)->where('status', 'pending')
-            ->with('recipient.profile')->latest()->paginate(20)
+            ->with(['recipient.profile', 'recipient.activeNote'])->latest()->paginate(20)
             ->through(fn (MessageRequest $r) => $this->payload($r, 'sent'));
 
         return response()->json([
@@ -68,7 +71,12 @@ class MessageRequestController extends Controller
     {
         $this->authorize('view', $messageRequest);
 
-        $messageRequest->load(['sender.profile', 'recipient.profile']);
+        $messageRequest->load([
+            'sender.profile',
+            'sender.activeNote',
+            'recipient.profile',
+            'recipient.activeNote',
+        ]);
         $side = $messageRequest->sender_id === auth()->id() ? 'sent' : 'incoming';
 
         $messages = $messageRequest->conversation->messages()

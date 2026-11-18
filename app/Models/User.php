@@ -92,6 +92,12 @@ class User extends Authenticatable
         return $this->hasMany(Note::class);
     }
 
+    /** Active (unexpired) note, eager-loadable for list payloads. */
+    public function activeNote(): HasOne
+    {
+        return $this->hasOne(Note::class)->active();
+    }
+
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class);
