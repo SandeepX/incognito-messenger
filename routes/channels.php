@@ -17,12 +17,12 @@ use Illuminate\Support\Facades\Broadcast;
 
 // Presence: any logged-in user may appear in the online list.
 Broadcast::channel('online', function ($user) {
-    return [
+    return array_merge([
         'id' => $user->id,
         'name' => $user->name,
         'username' => $user->username,
         'avatar' => $user->avatarUrl(),
-    ];
+    ], $user->presencePayload());
 });
 
 // One private channel per conversation, shared by direct chats and groups.

@@ -79,10 +79,12 @@ class MessageRequestController extends Controller
         ]);
         $side = $messageRequest->sender_id === auth()->id() ? 'sent' : 'incoming';
 
+        $viewerId = auth()->id();
         $messages = $messageRequest->conversation->messages()
+            ->visibleTo($viewerId)
             ->with(['sender.profile', 'reads.user.profile', 'attachments'])
             ->latest()->limit(20)->get()->reverse()->values()
-            ->map(fn (Message $m) => $m->payload())->all();
+            ->map(fn (Message $m) => $m->payload($viewerId))->all();
 
         return response()->json($this->payload($messageRequest, $side) + ['messages' => $messages]);
     }

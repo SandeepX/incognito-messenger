@@ -31,6 +31,7 @@ class ConversationController extends Controller
                 'participants.profile',
                 'participants.activeNote',
                 'group' => fn ($q) => $q->withCount('members'),
+                'latestMessage' => fn ($q) => $q->visibleTo($me),
                 'latestMessage.sender.profile',
             ])
             ->get()
@@ -61,7 +62,7 @@ class ConversationController extends Controller
                     'subtitle' => $subtitle,
                     'avatar' => $avatar,
                     'has_note' => $other?->activeNote !== null,
-                    'last_message' => $last?->payload(),
+                    'last_message' => $last?->payload($me),
                     'last_at' => $last?->created_at?->toISOString(),
                 ];
             });
@@ -87,6 +88,7 @@ class ConversationController extends Controller
 
         DB::transaction(function () use ($conversation, $me, &$newReads) {
             $ids = $conversation->messages()
+                ->visibleTo($me)
                 ->where('sender_id', '!=', $me)
                 ->whereDoesntHave('reads', fn ($q) => $q->where('user_id', $me))
                 ->pluck('id');
@@ -123,12 +125,13 @@ class ConversationController extends Controller
         broadcast(new UnreadCountsUpdated($me, $counts));
 
         $page = $conversation->messages()
+            ->visibleTo($me)
             ->with(['sender.profile', 'reads.user.profile', 'attachments'])
             ->orderByDesc('id')
             ->cursorPaginate(30);
 
         return response()->json([
-            'data' => collect($page->items())->map(fn (Message $m) => $m->payload())->all(),
+            'data' => collect($page->items())->map(fn (Message $m) => $m->payload($me))->all(),
             'next_cursor' => $page->nextCursor()?->encode(),
             'conversation_id' => $conversation->id,
             'unread' => $counts[$conversation->id] ?? 0,

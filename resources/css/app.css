@@ -110,6 +110,7 @@ main { display: flex; min-width: 0; min-height: 0; }
 .conv-item .body { flex: 1; min-width: 0; }
 .conv-row { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .conv-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-presence { color: var(--muted); font-size: 10px; margin-left: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .conv-time { color: var(--muted); font-size: 10.5px; flex: none; }
 .conv-bottom { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-top: 2px; }
 .conv-preview { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -125,6 +126,7 @@ main { display: flex; min-width: 0; min-height: 0; }
 .chat-head .who strong { display: block; font-size: 15px; }
 .chat-head .who small { color: var(--muted); font-size: 12px; }
 .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #64748b; margin-right: 5px; }
+.status-dot.recent { background: #94a3b8; }
 .status-dot.online { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
 .back-btn { display: none; background: none; border: 0; color: var(--text); font-size: 20px; padding: 2px 6px; }
 .typing { margin-left: auto; color: var(--brand-2); font-size: 12.5px; display: none; align-items: center; gap: 7px; }
@@ -164,9 +166,28 @@ main { display: flex; min-width: 0; min-height: 0; }
 .composer { position: relative; display: flex; gap: 10px; align-items: flex-end; flex: none; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); z-index: 2; }
 .composer textarea { flex: 1; min-width: 0; resize: none; max-height: 140px; min-height: 44px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); outline: none; field-sizing: content; }
 .composer textarea:focus { border-color: var(--brand); }
-.send-btn { height: 44px; padding: 0 20px; border: 0; border-radius: 12px; background: var(--brand); color: #fff; font-weight: 600; }
+.send-btn { position: relative; height: 44px; width: 44px; flex: none; padding: 0; border: 0; border-radius: 12px; background: var(--brand); color: #fff; display: grid; place-items: center; }
+.send-btn svg { width: 20px; height: 20px; fill: currentColor; transform: translateX(-1px); }
 .send-btn:hover { background: var(--brand-2); }
 .send-btn:disabled { opacity: .5; cursor: default; }
+.send-btn::after {
+    content: attr(aria-label);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    padding: 5px 8px;
+    border-radius: 7px;
+    background: #0f172a;
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(3px);
+    transition: .15s;
+}
+.send-btn:hover::after, .send-btn:focus-visible::after { opacity: 1; transform: translateY(0); }
 .composer-hint { color: var(--muted); font-size: 10.5px; margin: 0 18px 10px; flex: none; }
 
 /* Anchored to the composer so it stays above it even when the textarea grows. */
@@ -316,6 +337,13 @@ main { display: flex; min-width: 0; min-height: 0; }
 .seen-line img { width: 15px; height: 15px; border-radius: 50%; object-fit: cover; }
 .status-line { font-size: 10px; color: var(--muted); }
 .status-line.seen { color: var(--brand-2); }
+.unsent-bubble { padding: 9px 13px; border-radius: 16px; border: 1px dashed var(--line); background: transparent; color: var(--muted); font-size: 12.5px; font-style: italic; }
+.mine .unsent-bubble { border-bottom-right-radius: 5px; }
+.theirs .unsent-bubble { border-bottom-left-radius: 5px; }
+.msg-actions { position: relative; display: flex; align-items: center; }
+.msg-menu-btn { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 15px; line-height: 1; opacity: 0; cursor: pointer; }
+.msg-row:hover .msg-menu-btn, .msg-menu-btn:focus-visible { opacity: 1; }
+.msg-menu-btn:hover { background: var(--panel-2); color: var(--text); }
 
 .request-details, .request-messages { margin: 10px 0; }
 .request-details .member-row { border: 1px solid var(--line); border-radius: 10px; }

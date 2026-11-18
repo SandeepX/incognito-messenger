@@ -12,6 +12,7 @@ use App\Http\Controllers\MessageRequestController;
 use App\Http\Controllers\MessengerController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PresenceController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UserSearchController;
 use Illuminate\Support\Facades\Route;
@@ -47,6 +48,14 @@ Route::middleware('auth')->group(function () {
     // Messages — authorization happens inside the controller + policy.
     Route::post('/api/conversations/{conversation}/messages', [MessageController::class, 'store'])
         ->middleware('throttle:120,1');
+    Route::post('/api/messages/{message}/unsend', [MessageController::class, 'unsend'])
+        ->middleware('throttle:60,1');
+
+    // Presence — connect/disconnect plus a lightweight 30s heartbeat.
+    Route::get('/api/presence', [PresenceController::class, 'index']);
+    Route::post('/api/presence/heartbeat', [PresenceController::class, 'heartbeat'])
+        ->middleware('throttle:120,1');
+    Route::post('/api/presence/disconnect', [PresenceController::class, 'disconnect']);
 
     // Groups — every endpoint is membership/admin authorized.
     Route::get('/api/groups/{group}', [GroupController::class, 'show']);

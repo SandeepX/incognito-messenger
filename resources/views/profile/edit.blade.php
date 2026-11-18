@@ -55,6 +55,24 @@
         <label for="bio">Bio</label>
         <textarea id="bio" name="bio" maxlength="500" placeholder="Tell people a little about yourself">{{ old('bio', $user->profile?->bio) }}</textarea>
 
+        <hr style="border:0;border-top:1px solid #334155;margin:20px 0 8px">
+
+        <input type="hidden" name="message_sounds" value="0">
+        <label class="check" for="message_sounds">
+            <input id="message_sounds" type="checkbox" name="message_sounds" value="1"
+                @checked((bool) old('message_sounds', $user->profile?->message_sounds ?? true))>
+            Message sounds
+        </label>
+        <small class="hint">Play a subtle tone when messages arrive or send.</small>
+
+        <input type="hidden" name="show_active_status" value="0">
+        <label class="check" for="show_active_status">
+            <input id="show_active_status" type="checkbox" name="show_active_status" value="1"
+                @checked((bool) old('show_active_status', $user->profile?->show_active_status ?? true))>
+            Show active status
+        </label>
+        <small class="hint">Let accepted friends see when you are online or last active.</small>
+
         <button class="primary" type="submit">Save changes</button>
     </form>
 

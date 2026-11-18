@@ -26,6 +26,7 @@ class FriendController extends Controller
             'has_note' => $user->relationLoaded('activeNote')
                 ? $user->activeNote !== null
                 : $user->activeNote()->exists(),
+            ...$user->presencePayload(),
         ];
     }
 

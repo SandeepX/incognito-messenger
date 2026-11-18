@@ -22,6 +22,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'last_active_at' => 'datetime',
             'password' => 'hashed',
         ];
     }
@@ -112,6 +113,28 @@ class User extends Authenticatable
     public function friendIds(): array
     {
         return $this->friends()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /** Privacy flag: false means nobody else should see presence or last-active text. */
+    public function showActiveStatus(): bool
+    {
+        return (bool) ($this->profile?->show_active_status ?? true);
+    }
+
+    public function messageSoundsEnabled(): bool
+    {
+        return (bool) ($this->profile?->message_sounds ?? true);
+    }
+
+    /** Shared shape for presence-aware payloads; hides timestamps when private. */
+    public function presencePayload(): array
+    {
+        return [
+            'show_active_status' => $this->showActiveStatus(),
+            'last_active_at' => $this->showActiveStatus()
+                ? $this->last_active_at?->toISOString()
+                : null,
+        ];
     }
 
     public function getUsernameAttribute(): string

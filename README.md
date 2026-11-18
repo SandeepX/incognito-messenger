@@ -1,6 +1,6 @@
 # Incognito Messenger
 
-A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel Echo** and **MinIO**. It supports registration/login, profiles, friend requests, message requests, direct and group chats, read receipts, private file sharing, 24-hour notes, notifications and a Messenger-style UI. Every HTTP request and WebSocket subscription is authorized on the backend.
+A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel Echo** and **MinIO**. It supports registration/login, profiles, friend requests, message requests, direct and group chats, read receipts, private file sharing, 24-hour notes, notifications, last-active presence, message sounds, unsend and a Messenger-style UI. Every HTTP request and WebSocket subscription is authorized on the backend.
 
 ## Features
 
@@ -9,6 +9,9 @@ A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel E
 - **Message requests** — non-friends can send a short introduction with one message. The thread is hidden from normal chat lists until the recipient accepts; accepting also creates the friendship. The recipient alone can delete an incoming request; the sender alone can cancel one.
 - **Direct & group messages** — one conversation per pair, cursor-paginated history, latest-message previews, unread badges, typing whispers and presence.
 - **Read receipts** — sent → delivered → seen. A `message_reads` row is written only when a recipient actually opens the thread (never from a websocket receipt alone). Group messages show every reader, and receipts are included in every paginated message payload.
+- **Last-active presence** — green dot for “Active now”, relative text for recent visits, nothing after seven days. A 30-second heartbeat and socket connect/disconnect events persist `users.last_active_at`; the **Show active status** profile toggle hides both presence and the timestamp.
+- **Message sounds** — optional, on by default. A subtle tone plays for incoming messages (not for the focused chat, background-safe and deduplicated against your own socket echo) and a quieter one on successful send. Toggle it in **Profile → Message sounds**.
+- **Unsend** — sender-only. Unseen messages become a shared “unsent a message” placeholder on both sides; seen messages are removed only from the sender’s view. The server decides at request time from `message_reads`, and Reverb pushes the decision immediately.
 - **Private media & files** — images (JPEG/PNG/GIF/WebP) and documents (PDF, Word, Excel, TXT, CSV, ZIP) up to 20 MB each, max 5 per message. Everything is stored in a private MinIO bucket with generated names. Download/preview URLs are signed, expire after 5 minutes, and are generated only after a policy check.
 - **Notes** — one active 300-character note per user, shown as a cloud in the notes strip, visible only to the author and accepted friends, automatically hidden after 24 hours, with owner-only edit/delete and a small cloud marker on avatars when someone has a note.
 - **Realtime** — new messages, read receipts, friend/message request events, accepts, notes, unread counts, conversation-list changes and group changes are pushed over Reverb. Request and notification counters update without a refresh.
@@ -92,7 +95,17 @@ All routes below require the session cookie and CSRF header.
 | Notes | `GET/POST /api/notes`, `GET/PUT/DELETE /api/notes/{note}` |
 | Notifications | `GET /api/notifications`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all` |
 | Attachments | `GET /api/attachments/{id}/download`, `GET /api/attachments/{id}/preview` |
-| Chat | `GET /api/conversations`, `GET /api/conversations/{id}`, `POST /api/conversations/direct/{user}`, `POST /api/conversations/{id}/messages` |
+| Chat | `GET /api/conversations`, `GET /api/conversations/{id}`, `POST /api/conversations/direct/{user}`, `POST /api/conversations/{id}/messages`, `POST /api/messages/{id}/unsend` |
+| Presence | `GET /api/presence`, `POST /api/presence/heartbeat`, `POST /api/presence/disconnect` |
+
+### Message sound assets
+
+The two bundled files are tiny 8-bit-style PCM WAV cues:
+
+- `public/sounds/received.wav` — incoming message ping
+- `public/sounds/sent.wav` — quieter confirmation on successful send
+
+Replace either file with your own short WAV (or MP3/OGG and update the paths in `resources/js/app.js`) without changing any PHP code. They are served straight from `public/`, so a `npm run build` is not required for a replacement to take effect; clients may need a hard refresh to bypass the browser cache. Audio is unlocked on the first click/keypress and failures are ignored silently.
 
 ## How authorization works
 
@@ -116,13 +129,14 @@ Browser ──HTTP──► Controllers ──Gate/policy──► Database / Mi
 | `app/Models/` | Users, profiles, conversations, groups, messages, reads, friends, requests, notes, notifications, attachments |
 | `app/Policies/` | Backend authorization rules for every owned resource |
 | `app/Http/Controllers/` | Auth, profile, avatar, chat, group, friend, request, note, notification and attachment controllers |
-| `app/Events/` | `MessageSent`, `MessageSeen`, `NotificationCreated`, `ConversationsUpdated`, `UnreadCountsUpdated`, `AccessRevoked`, `GroupUpdated` |
+| `app/Events/` | `MessageSent`, `MessageSeen`, `MessageUnsent`, `PresenceUpdated`, `NotificationCreated`, `ConversationsUpdated`, `UnreadCountsUpdated`, `AccessRevoked`, `GroupUpdated` |
 | `app/Support/` | `UnreadCounter`, `PairKey`, `Notifier`, `AttachmentUpload`, `ReverbConnectionTerminator` |
 | `app/Console/Commands/PruneOrphanedFiles.php` | Removes MinIO objects with no database row |
 | `database/migrations/` | Full schema, indexes, foreign keys and cascades |
 | `docker/minio/` | Locally built MinIO server image and bucket init script |
 | `resources/js/app.js` | UI behaviour, fetch/XHR calls and Echo subscriptions |
-| `resources/css/app.css` | Messenger layout, notes, receipts and attachment styles |
+| `resources/css/app.css` | Messenger layout, notes, receipts, presence, unsend menu and attachment styles |
+| `public/sounds/` | Small preloaded WAV files used by the notification sounds |
 
 ## Development
 
