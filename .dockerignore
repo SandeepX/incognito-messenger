@@ -1,0 +1,8 @@
+vendor
+node_modules
+public/build
+.git
+.env
+database/database.sqlite
+docker-compose.yml
+README.md
