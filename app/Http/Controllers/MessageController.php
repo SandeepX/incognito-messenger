@@ -3,60 +3,58 @@
 namespace App\Http\Controllers;
 
 use App\Events\MessageSent;
+use App\Events\UnreadCountsUpdated;
+use App\Models\Conversation;
 use App\Models\Message;
-use App\Models\User;
+use App\Models\MessageRead;
+use App\Support\UnreadCounter;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MessageController extends Controller
 {
     /**
-     * History of a 1:1 conversation. WebSockets are live-only, so the
-     * past comes from plain HTTP the moment a conversation is opened.
+     * Send a message to a conversation the caller is allowed to use.
+     * Ownership comes from auth() — never from a "from" field in the request.
      */
-    public function index(User $user)
+    public function store(Conversation $conversation, Request $request): JsonResponse
     {
-        $me = auth()->id();
+        $this->authorize('send', $conversation);
 
-        return response()->json(
-            Message::where(function ($q) use ($user, $me) {
-                $q->where('from_user_id', $me)->where('to_user_id', $user->id);
-            })->orWhere(function ($q) use ($user, $me) {
-                $q->where('from_user_id', $user->id)->where('to_user_id', $me);
-            })
-                ->orderBy('id')
-                ->limit(200)
-                ->get()
-                // Same shape as MessageSent::broadcastWith(), so the browser
-                // can render history and live messages with ONE code path.
-                ->map(fn (Message $m) => [
-                    'from' => $m->from_user_id,
-                    'name' => $m->from->name,
-                    'to' => $m->to_user_id,
-                    'body' => $m->body,
-                ])
-        );
-    }
-
-    public function store(Request $request)
-    {
         $data = $request->validate([
-            'to' => 'required|integer|exists:users,id',
-            'body' => 'required|string|max:1000',
+            'body' => ['required', 'string', 'max:2000'],
         ]);
 
-        Message::create([
-            'from_user_id' => auth()->id(),
-            'to_user_id' => $data['to'],
-            'body' => $data['body'],
-        ]);
+        $message = DB::transaction(function () use ($conversation, $data) {
+            $message = Message::create([
+                'conversation_id' => $conversation->id,
+                'sender_id' => auth()->id(),
+                'body' => $data['body'],
+            ]);
 
-        MessageSent::dispatch(
-            auth()->id(),
-            auth()->user()->name,
-            (int) $data['to'],
-            $data['body'],
-        );
+            // The sender has obviously "read" their own message.
+            MessageRead::create([
+                'message_id' => $message->id,
+                'user_id' => auth()->id(),
+                'read_at' => now(),
+            ]);
 
-        return response()->json(['status' => 'ok']);
+            return $message;
+        });
+
+        $message->load('sender.profile');
+        broadcast(new MessageSent($message));
+
+        // Push fresh badge counts to every other participant.
+        $recipients = $conversation->type === 'group'
+            ? $conversation->group->members()
+            : $conversation->participants();
+
+        foreach ($recipients->whereKeyNot(auth()->id())->pluck('users.id') as $userId) {
+            broadcast(new UnreadCountsUpdated((int) $userId, UnreadCounter::for((int) $userId)));
+        }
+
+        return response()->json($message->payload(), 201);
     }
 }

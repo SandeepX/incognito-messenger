@@ -27,7 +27,7 @@ RUN npm run build
 # ============================================================
 # Stage 2: PHP-FPM runtime
 # pdo_sqlite ships with the official php image, so no extra
-# extension installs are needed for the demo.
+# extension installs are needed (SQLite is the Docker database).
 # ============================================================
 FROM php:8.4-fpm-alpine
 

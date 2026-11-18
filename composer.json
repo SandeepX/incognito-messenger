@@ -1,9 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "sandeepx/incognito-messenger",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "description": "Incognito Messenger — real-time private and group messaging built with Laravel and Reverb.",
+    "keywords": ["laravel", "reverb", "websocket", "messenger"],
     "license": "MIT",
     "require": {
         "php": "^8.3",

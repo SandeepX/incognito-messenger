@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Models\Message;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -9,33 +10,19 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * One event for any 1:1 chat message.
- *
- * The channel is SYMMETRIC: both participants of a conversation
- * subscribe to the same channel, built by sorting the two user ids:
- *
- *     Alice(1) <-> Bob(2)  =>  private chat.1.2
- *
- * Sorting matters — otherwise Alice's client would listen on chat.1.2
- * while Bob sent to chat.2.1 and they'd never meet.
+ * One event per message, broadcast on the conversation's private channel.
+ * Both 1:1 threads and groups use this same event — channel authorization
+ * (routes/channels.php) decides who is actually allowed to listen.
  */
 class MessageSent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(
-        public int $fromId,
-        public string $fromName,
-        public int $toId,
-        public string $body,
-    ) {}
+    public function __construct(public Message $message) {}
 
     public function broadcastOn(): array
     {
-        $ids = [$this->fromId, $this->toId];
-        sort($ids);
-
-        return [new PrivateChannel('chat.'.$ids[0].'.'.$ids[1])];
+        return [new PrivateChannel('conversation.'.$this->message->conversation_id)];
     }
 
     public function broadcastAs(): string
@@ -45,11 +32,6 @@ class MessageSent implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-        return [
-            'from' => $this->fromId,
-            'name' => $this->fromName,
-            'to' => $this->toId,
-            'body' => $this->body,
-        ];
+        return $this->message->payload();
     }
 }

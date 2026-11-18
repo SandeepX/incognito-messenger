@@ -1,111 +1,118 @@
-# WebSocket Messenger — Laravel + Reverb
+# Incognito Messenger
 
-A small demo for understanding **how WebSockets actually work** in Laravel, using the official **Laravel Reverb** WebSocket server and **Laravel Echo** on the frontend. The UI is a messenger: see who's online, open a 1:1 conversation, watch the "typing…" dots, and exchange messages that appear live on both sides.
+A production-shaped, real-time messenger built with **Laravel 13**, **Laravel Reverb** and **Laravel Echo**. It supports registration and login, editable profiles with avatars, one-to-one chats, groups, live delivery, unread badges, typing indicators and online presence — with authorization enforced on the backend for every request and every WebSocket subscription.
 
-## The big picture
+## Features
 
-A normal HTTP request is *client asks → server answers → done*. The server cannot start talking later. A WebSocket is a **long-lived connection** opened once (HTTP `Upgrade` handshake) and kept open, so **the server can push data to the browser at any moment**.
+- **Accounts** — registration, login/logout, hashed passwords, validation, session rotation, login throttling and protected routes.
+- **Profiles** — full name, unique username, email, bio/status and avatar upload (MIME + size validated, served through Laravel).
+- **Direct messages** — search users, one conversation per pair, paginated history, latest-message preview, unread counts and read receipts. Online/offline status via a presence channel.
+- **Groups** — create named groups with an optional avatar, search/select members, creator is admin, admins add/remove members, members leave, admins delete.
+- **Real time** — messages, unread-count updates, group updates and membership revocation are pushed over Reverb; typing uses client-side whispers. The UI shows a connection banner if the socket drops and resyncs when it reconnects.
+- **Security** — policies plus `routes/channels.php` decide who may read, write or subscribe. Removing a member detaches their conversation participation immediately, so future HTTP requests and channel auth attempts fail; existing sockets are also closed through Reverb's terminate-connections API. Avatars stay in private storage.
+- **Responsive UI** — Messenger-style two-pane layout on desktop/tablet and a list → chat drill-down on mobile. Enter sends, Shift+Enter inserts a newline.
 
-```
-  Alice's browser                    Laravel                         Reverb
- ┌──────────────┐   POST /messages  ┌───────────────┐               ┌──────────────┐
- │ type + Enter │ ────────────────► │ MessageController             │              │
- │              │                   │ MessageSent::dispatch()       │              │
- │              │                   │   │ broadcasted on            │              │
- │              │   ws://host:8080  │   └── private-chat.1.2 ─────► │ WS server    │
- │ ◄───────────────────────────────────────────── push event ─────── │              │
- │  own bubble  │                   │                               │  ─────────►  │ Bob's browser
- └──────────────┘                   └───────────────┘               └──────────────┘
-                                                                           ▲
-   "Alice is typing…" ───── a CLIENT event (whisper), browser → Reverb ─────┘
-                          does NOT touch Laravel at all
-```
+## Stack
 
-Key players:
-
-| Piece | Role |
+| Piece | Version / role |
 |---|---|
-| **Reverb** (`php artisan reverb:start`) | A standalone PHP WebSocket server. Holds open connections, relays events, checks channel subscriptions. Listens on port `8080`. |
-| **Echo** (`resources/js/echo.js`) | Browser library that opens the WebSocket, subscribes to channels, and lets you write `listen('.Event', ...)` / `whisper(...)`. |
-| **Events** (`app/Events/*`) | Plain PHP classes marked `ShouldBroadcastNow`. Their public properties become the JSON payload pushed to clients. |
-| **`routes/channels.php`** | Decides *who* is allowed on private/presence channels. |
-| **Laravel app** | Your normal HTTP app. It doesn't hold WebSockets itself — it *hands* events to Reverb. |
+| Laravel | 13.43 (PHP 8.4) |
+| Reverb | 1.14 (WebSocket server on port 8080) |
+| Echo + pusher-js | 2.6 / 8.6 (browser client) |
+| Vite + Tailwind | 8 / 4 (frontend build) |
+| SQLite | database in the `db-data` Docker volume |
 
-## What the app does
-
-1. **Online sidebar — presence channel.** `Echo.join('online')` subscribes to the wire channel `presence-online`. `here()`, `joining()` and `leaving()` maintain the list of online users. (Echo adds the `presence-` prefix itself — passing `'presence-online'` would produce `presence-presence-online`.)
-2. **1:1 conversations — private channel.** Each pair uses a *symmetric* channel `chat.{minId}.{maxId}`. Both participants subscribe to the **same** channel; `routes/channels.php` lets only those two ids in.
-3. **Messages — server event.** `POST /messages` saves the message and dispatches `MessageSent`. Reverb pushes it to both subscribers — including the sender, so own messages use the same render path as received ones.
-4. **Typing indicator — client event (whisper).** `Echo.private(channel).whisper('typing', ...)` goes browser → Reverb → the other browser. No controller, no event class, no HTTP request — that's why it feels instant.
-5. **History — plain HTTP.** `GET /messages/{user}` backfills past messages when a conversation is opened; WebSockets are *live only*.
-
-## Run it (Docker)
+## Run it
 
 ```bash
-cd ~/websocket-demo
+cd ~/incognito-messenger
+cp .env.example .env
+# Generate an app key (any one of these works):
+php artisan key:generate
+# or: sed -i "s|^APP_KEY=$|APP_KEY=base64:$(openssl rand -base64 32)|" .env
+
 docker compose up -d --build
 ```
 
-That single command runs the whole system:
+Open **http://localhost:8000**. The example environment already points the
+browser at `ws://<page-host>:8080`; change `REVERB_APP_SECRET` before exposing
+the app publicly.
 
-| Service | Container job | Port |
+| Service | Job | Port |
 |---|---|---|
-| `migrate` (one-shot) | Creates the schema + seeds Alice/Bob/Charlie/Dana, then exits | — |
-| `assets` (one-shot) | Copies built JS/CSS from the image to a volume nginx mounts | — |
-| `app` | PHP-FPM running Laravel | internal |
-| `webserver` | Nginx → FastCGI → `app` | **http://localhost:8000** |
-| `reverb` | The WebSocket server | **ws://localhost:8080** |
+| `migrate` (one-shot) | Migrates + seeds demo accounts | — |
+| `assets` (one-shot) | Copies built JS/CSS into the nginx volume | — |
+| `app` | PHP-FPM / Laravel | internal |
+| `webserver` | nginx → PHP-FPM | 8000 |
+| `reverb` | WebSocket server | 8080 |
 
-Two things to notice (they're the two most common Docker mistakes with Reverb):
+Demo accounts (password `password` for all): `alice@example.com`, `bob@example.com`, `charlie@example.com`, `dana@example.com`. You can also register your own account.
 
-- **Inside the Docker network**, Laravel pushes events to `http://reverb:8080` (`REVERB_HOST=reverb` is overridden in `docker-compose.yml`), while the **browser** connects to `ws://localhost:8080` because that port is published from the `reverb` container. Same server, two views of the network. If the app used `localhost:8080` inside a container it would talk to itself and fail with cURL error 7.
-- The `VITE_REVERB_*` vars are baked into the JS bundle **at image build time**, so a `REVERB_APP_KEY` change requires `docker compose build`.
+Stop with `docker compose down`. Data persists in the `db-data` volume; `docker compose down -v` wipes it.
 
-If you change PHP code after building, run `docker compose up -d --build app` and then `docker compose restart webserver` (nginx caches the PHP-FPM container's old IP until restarted).
+After changing PHP code, rebuild and restart nginx so it picks up the new PHP-FPM address:
 
-Stop with `docker compose down`. The SQLite data lives in the `db-data` volume and survives rebuilds; wipe it with `docker compose down -v`.
-
-## Accessing from other machines
-
-Docker publishes both ports on `0.0.0.0`, so any device on the network can open:
-
-```
-http://<server-ip>:8000
+```bash
+docker compose up -d --build
+docker compose restart webserver
 ```
 
-Find the server IP with `hostname -I` (e.g. `http://192.168.120.112:8000`).
+### Accessing from other machines
 
-`resources/js/echo.js` derives the WebSocket host from `window.location.hostname` instead of baking `localhost` into the bundle, so a browser on another machine automatically connects to `ws://<server-ip>:8080` — same build, no recompilation, no per-machine config. (If it were hardcoded to `localhost`, the remote browser would try to open the WebSocket against *itself* and silently fail.)
+Ports are published on all interfaces. Open `http://<server-ip>:8000`. `resources/js/echo.js` derives the WebSocket host from `window.location.hostname`, so the same image connects to `ws://<server-ip>:8080` without a rebuild. Make sure the firewall allows ports 8000 and 8080.
 
-If it still doesn't connect from another machine, check the server's firewall allows ports 8000 (nginx) and 8080 (Reverb).
+## How authorization works
 
-## Try it
+```
+Browser ──HTTP──► Controllers ──Gate/policy──► Database
+   │                    │
+   │ WebSocket          └─ broadcast events ──► Reverb ──► allowed subscribers
+   └── /broadcasting/auth ──► routes/channels.php (live membership check)
+```
 
-Open **http://localhost:8000** in two browsers (or one normal + one incognito window). Log in as **Alice** in one and **Bob** in the other (shortcut links are in the sidebar, or use `/login/alice`, `/login/bob`, etc.).
+- `ConversationPolicy` / `GroupPolicy` gate every history, send, group-info and management endpoint.
+- `routes/channels.php` checks participation/membership **live** for `conversation.{id}`; `user.{id}` is restricted to that user. Echo adds the `private-`/`presence-` prefix on the wire, Laravel strips it, so the callbacks use bare names (`online`, `conversation.{id}`, `user.{id}`).
+- `AccessRevoked` makes an open browser leave a conversation the moment it is removed. `ReverbConnectionTerminator` additionally closes that user's live sockets, so an old subscription cannot keep receiving messages; the backend check still blocks every future HTTP request and subscription.
+- The sender identity always comes from `auth()->id()` — request payloads cannot impersonate another user.
+- Message history uses cursor pagination (30 per page) and unread counts are computed in one grouped query.
 
-- Bob appears in Alice's **Online now** list the moment his WebSocket subscribes; he disappears when he closes the tab.
-- Click **Bob** in the sidebar, type a message and press Enter. It appears in both windows instantly.
-- While someone types, the other window shows **"Bob is typing"** with animated dots — from a whisper that never reaches Laravel.
-- Watch the browser **console** (`F12`): `connecting → connected`, plus `[presence]` join/leave logs.
-- Watch the **Reverb** logs: `docker compose logs -f reverb` — it logs connections, subscriptions and events.
-- Kill Reverb (`docker compose stop reverb`): Echo retries and recovers when it's back (`docker compose start reverb`).
+## Project layout
 
-## Where to look in the code
-
-| File | What it teaches |
+| Path | Purpose |
 |---|---|
-| `app/Events/MessageSent.php` | A broadcast event: payload (`broadcastWith`), custom name (`broadcastAs`) and the pair-sorted `PrivateChannel` |
-| `app/Http/Controllers/MessageController.php` | Where `dispatch()` happens, plus HTTP history shaped exactly like the event payload so one render path handles both |
-| `routes/channels.php` | Authorization rules for the presence channel and the symmetric `chat.{a}.{b}` channel |
-| `resources/js/app.js` | `join()` (presence), `private()` + `listen()` (messages), `listenForWhisper()` and `whisper()` (typing) |
-| `resources/views/messenger.blade.php` | The UI and the CSS for the animated typing dots |
-| `resources/js/echo.js` | How the browser connects to Reverb, deriving the host from the page URL (LAN-safe) |
-| `docker-compose.yml` | How the same image becomes app / reverb / nginx, and the `REVERB_HOST=reverb` trick |
-| `Dockerfile` | Node stage builds Echo JS; PHP-FPM stage runs the app |
+| `app/Models/` | `User`, `UserProfile`, `Conversation`, `ConversationParticipant`, `Group`, `GroupMember`, `Message`, `MessageRead` |
+| `app/Policies/` | Conversation and group authorization rules |
+| `app/Http/Controllers/` | Auth, profile, avatar, conversation, message, group and user-search controllers |
+| `app/Events/` | `MessageSent`, `UnreadCountsUpdated`, `AccessRevoked`, `GroupUpdated` |
+| `app/Support/UnreadCounter.php` | Fast per-conversation unread aggregation |
+| `app/Support/ReverbConnectionTerminator.php` | Closes live sockets when group access is revoked |
+| `database/migrations/` | Full schema, indexes, foreign keys and cascades |
+| `routes/web.php` | All HTTP routes (public auth + authenticated messenger/API) |
+| `routes/channels.php` | Private/presence channel authorization |
+| `resources/views/` | Auth, profile and Messenger Blade templates |
+| `resources/js/app.js` | UI behaviour, fetch calls and Echo subscriptions |
+| `resources/js/echo.js` | Reverb connection setup (LAN-safe host) |
+| `resources/css/app.css` | Messenger layout and responsive styles |
+
+## Development
+
+```bash
+# PHP tests (uses in-memory SQLite; no Docker required)
+php artisan test
+
+# Frontend production build
+npm run build
+
+# Inside Docker
+docker compose exec app php artisan test
+docker compose exec app php artisan migrate:status
+docker compose logs -f reverb
+```
+
+Feature tests cover registration/login, profile updates and avatar validation, direct-chat privacy, unread counts, group creation/management, immediate access revocation (HTTP **and** channel callbacks), deletion cascades and schema indexes.
 
 ## Notes
 
-- Events use `ShouldBroadcastNow` (broadcast immediately, no queue) to keep the demo simple. In production use `ShouldBroadcast` and run `php artisan queue:work` — broadcasts then travel via the queue and never block web requests.
-- Client events (whispers) only work on **private/presence** channels: Reverb authenticates the subscription first, so random visitors can't inject events into someone else's conversation.
-- The two participants' ids are sorted in both the event and the client so both sides land on the same channel name (`chat.1.2`, never `chat.2.1`).
-- Every user id in a conversation is checked in `routes/channels.php` — a third user who guesses `chat.1.2` gets a `403` from `/broadcasting/auth`.
+- Events use `ShouldBroadcastNow` so delivery is immediate without a queue worker. For high traffic, switch to `ShouldBroadcast` and run `php artisan queue:work`.
+- Typing indicators are whispers: browser → Reverb → other browsers. They never reach Laravel and are throttled in the client.
+- The WebSocket key is baked into the JS bundle at build time; changing `REVERB_APP_KEY` requires `docker compose build`.

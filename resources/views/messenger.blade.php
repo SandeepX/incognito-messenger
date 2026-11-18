@@ -4,124 +4,124 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    @if (auth()->check())
-        <meta name="user-id" content="{{ auth()->id() }}">
-        <meta name="user-name" content="{{ auth()->user()->name }}">
-    @endif
-    <title>WebSocket Messenger</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; }
-        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; overflow: hidden; }
-
-        .app { display: flex; height: 100vh; }
-
-        /* ---------- sidebar ---------- */
-        aside { width: 290px; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; }
-        .side-head { padding: 14px 16px; border-bottom: 1px solid #334155; }
-        .side-head h1 { font-size: 16px; }
-        .side-head .me { font-size: 12.5px; color: #94a3b8; margin-top: 4px; }
-        .side-head nav { margin-top: 8px; font-size: 13px; }
-        .side-head nav a { color: #7dd3fc; text-decoration: none; margin-right: 10px; }
-        .side-title { padding: 10px 16px 6px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
-        #online-list { list-style: none; overflow-y: auto; flex: 1; }
-        #online-list li { padding: 10px 16px; cursor: pointer; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1e293b; font-size: 14px; }
-        #online-list li:hover { background: #273449; }
-        #online-list li.active { background: #0ea5e9; color: #fff; }
-        #online-list li .dot { width: 9px; height: 9px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; flex: none; }
-        #online-list li.self { cursor: default; opacity: .65; }
-        #online-list li.self:hover { background: none; }
-        #online-list .muted { color: #64748b; font-style: italic; cursor: default; }
-
-        /* ---------- conversation ---------- */
-        main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-        #empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 14px; }
-        .conv { display: none; flex-direction: column; height: 100%; }
-        .conv.open { display: flex; }
-        .conv-head { padding: 12px 20px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; gap: 12px; }
-        .conv-head h2 { font-size: 15px; }
-        .typing { margin-left: auto; font-size: 12.5px; color: #7dd3fc; visibility: hidden; display: flex; align-items: center; gap: 8px; }
-        .typing.show { visibility: visible; }
-        .dots { display: inline-flex; gap: 3px; }
-        .dots i { width: 6px; height: 6px; border-radius: 50%; background: #7dd3fc; animation: bounce 1.2s infinite; }
-        .dots i:nth-child(2) { animation-delay: .15s; }
-        .dots i:nth-child(3) { animation-delay: .3s; }
-        @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-5px); opacity: 1; } }
-
-        #msgs { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; }
-        .msg { max-width: 65%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.45; word-break: break-word; }
-        .msg.theirs { align-self: flex-start; background: #1e293b; border: 1px solid #334155; border-bottom-left-radius: 4px; }
-        .msg.mine { align-self: flex-end; background: #0ea5e9; color: #fff; border-bottom-right-radius: 4px; }
-
-        form.compose { display: flex; gap: 10px; padding: 14px 20px; background: #1e293b; border-top: 1px solid #334155; }
-        form.compose input { flex: 1; font-size: 14px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: 11px 14px; outline: none; }
-        form.compose input:focus { border-color: #0ea5e9; }
-        form.compose button { font-size: 14px; border: none; background: #0ea5e9; color: #fff; padding: 0 20px; border-radius: 10px; cursor: pointer; font-weight: 600; }
-        form.compose button:hover { background: #38bdf8; }
-
-        /* ---------- guest overlay ---------- */
-        #guest { position: fixed; inset: 0; background: rgba(15,23,42,.92); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 10; }
-        #guest h1 { font-size: 20px; }
-        #guest p { color: #94a3b8; font-size: 14px; }
-        #guest a { display: inline-block; background: #0ea5e9; color: #fff; padding: 10px 22px; border-radius: 10px; text-decoration: none; font-weight: 600; margin: 0 6px; }
-        #guest a:hover { background: #38bdf8; }
-    </style>
+    <meta name="user-id" content="{{ $me->id }}">
+    <meta name="user-name" content="{{ $me->name }}">
+    <meta name="user-username" content="{{ $me->username }}">
+    <meta name="user-avatar" content="{{ $me->avatarUrl() }}">
+    <title>Incognito Messenger</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
-<div class="app">
-    <aside>
-        <div class="side-head">
-            <h1>💬 WebSocket Messenger</h1>
-            <div class="me">@auth Logged in as <strong>{{ auth()->user()->name }}</strong> @endauth</div>
-            <nav>
-                <a href="/login/alice">Alice</a>
-                <a href="/login/bob">Bob</a>
-                <a href="/login/charlie">Charlie</a>
-                @auth<form method="POST" action="{{ route('logout') }}" style="display:inline">@csrf<button style="background:none;border:none;color:#7dd3fc;cursor:pointer;font-size:13px">Logout</button></form>@endauth
-            </nav>
+<div id="offline-banner" class="offline">Connection lost — reconnecting…</div>
+
+<div class="app" id="app">
+    <aside class="sidebar">
+        <div class="brand-bar">
+            <span class="brand-icon">🕶️</span>
+            <div><strong>Incognito Messenger</strong><small>Private by design</small></div>
         </div>
-        <div class="side-title">Online now</div>
-        <ul id="online-list">
-            <li class="muted">connecting…</li>
+
+        <div class="me-card">
+            <img class="avatar" src="{{ $me->avatarUrl() }}" alt="Your avatar">
+            <div class="who">
+                <strong>{{ $me->name }}</strong>
+                <small>{{ '@'.$me->username }}</small>
+            </div>
+            <a class="icon-btn" href="{{ route('profile.edit') }}" title="Edit profile" aria-label="Edit profile">⚙</a>
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button class="logout" type="submit" title="Log out" aria-label="Log out">⏻</button>
+            </form>
+        </div>
+
+        <div class="search-wrap">
+            <input id="user-search" type="text" autocomplete="off" placeholder="Search people by name or username">
+            <div id="search-results" class="search-results"></div>
+        </div>
+
+        <div class="section-head">
+            <h2>Conversations</h2>
+            <button id="new-group-btn" class="icon-btn" type="button" title="New group" aria-label="New group">＋</button>
+        </div>
+        <ul id="conversation-list" class="conv-list">
+            <li class="empty-list">Loading conversations…</li>
         </ul>
     </aside>
 
     <main>
-        <div id="empty">Select someone from the online list to start chatting →</div>
-        <div class="conv" id="conv">
-            <div class="conv-head">
-                <h2 id="conv-name"></h2>
-                <div class="typing" id="typing">
-                    <span id="typing-name"></span> is typing
-                    <span class="dots"><i></i><i></i><i></i></span>
-                </div>
+        <div id="empty-chat" class="empty-chat">
+            <div>
+                <div class="big">💬</div>
+                <strong>Select a conversation</strong>
+                <p>Search for someone above, or tap ＋ to start a group.</p>
             </div>
-            <div id="msgs"></div>
-            <form class="compose" id="compose">
-                <input id="compose-input" placeholder="Message…" autocomplete="off">
-                <button type="submit">Send</button>
-            </form>
         </div>
+
+        <section id="chat" class="chat">
+            <header class="chat-head">
+                <button id="chat-back" class="back-btn" type="button" aria-label="Back">‹</button>
+                <img id="chat-avatar" class="avatar" src="{{ asset('images/default-avatar.svg') }}" alt="">
+                <div class="who">
+                    <strong id="chat-name">—</strong>
+                    <small id="chat-subtitle"></small>
+                </div>
+                <div id="typing" class="typing"><span id="typing-label">typing</span><span class="dots"><i></i><i></i><i></i></span></div>
+                <button id="group-info-btn" class="icon-btn" type="button" title="Group settings" aria-label="Group settings" hidden>⋯</button>
+            </header>
+
+            <div id="messages" class="messages" aria-live="polite"></div>
+
+            <form id="composer" class="composer">
+                <textarea id="message-input" rows="1" placeholder="Write a message…" autocomplete="off"></textarea>
+                <button id="send-btn" class="send-btn" type="submit">Send</button>
+            </form>
+            <div class="composer-hint">Enter to send · Shift + Enter for a new line</div>
+        </section>
     </main>
 </div>
 
-<div id="guest" @if (auth()->check()) hidden @endif>
-    <h1>💬 WebSocket Messenger</h1>
-    <p>Pick a demo account to enter — open a second browser/incognito window as another user to chat.</p>
-    <div>
-        <a href="/login/alice">Enter as Alice</a>
-        <a href="/login/bob">Enter as Bob</a>
-        <a href="/login/charlie">Enter as Charlie</a>
+<!-- New group -->
+<div id="group-modal" class="backdrop">
+    <div class="modal">
+        <h2>Create a group</h2>
+        <form id="group-form" enctype="multipart/form-data">
+            <label for="group-name">Group name</label>
+            <input id="group-name" type="text" maxlength="80" required placeholder="e.g. Weekend trip">
+
+            <label for="group-avatar">Group avatar (optional)</label>
+            <input id="group-avatar" type="file" name="avatar" accept="image/jpeg,image/png,image/gif,image/webp">
+
+            <label for="group-member-search">Add members</label>
+            <input id="group-member-search" type="text" autocomplete="off" placeholder="Search registered users">
+            <div id="group-members" class="members"></div>
+
+            <div class="modal-actions">
+                <button class="btn primary" type="submit">Create group</button>
+                <button class="btn" type="button" data-close="group-modal">Cancel</button>
+            </div>
+        </form>
     </div>
 </div>
 
-<script>
-    window.userId = document.querySelector('meta[name="user-id"]')
-        ? Number(document.querySelector('meta[name="user-id"]').content)
-        : null;
-    window.myName = document.querySelector('meta[name="user-name"]')
-        ? document.querySelector('meta[name="user-name"]').content
-        : 'Guest';
-</script>
-@vite(['resources/js/app.js'])
+<!-- Group settings -->
+<div id="settings-modal" class="backdrop">
+    <div class="modal">
+        <div class="row-between"><h2 id="settings-title">Group settings</h2>
+            <button class="icon-btn" type="button" data-close="settings-modal" aria-label="Close">✕</button>
+        </div>
+        <div id="settings-members" class="members"></div>
+
+        <label for="add-member-search">Add a member</label>
+        <input id="add-member-search" type="text" autocomplete="off" placeholder="Search users">
+        <div id="add-member-results" class="search-results" style="position:static;margin-top:6px"></div>
+
+        <div class="modal-actions">
+            <button id="leave-group-btn" class="btn danger" type="button">Leave group</button>
+            <button id="delete-group-btn" class="btn danger" type="button" hidden>Delete group</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
 </body>
 </html>

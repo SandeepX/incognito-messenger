@@ -1,33 +1,48 @@
 <?php
 
+use App\Models\Conversation;
 use Illuminate\Support\Facades\Broadcast;
 
 /*
 |--------------------------------------------------------------------------
 | Channel Authorization
 |--------------------------------------------------------------------------
+| Echo adds the wire prefix ("presence-"/"private-") itself, and Laravel
+| strips it again before calling these rules. That is why the names here
+| are bare: 'online', 'conversation.{id}', 'user.{id}'.
 |
-| When Echo tries to subscribe to a private or presence channel, the
-| client first calls /broadcasting/auth. Laravel runs the matching rule
-| below and only confirms the subscription when the callback returns
-| truthy. Public channels never hit this file — they need no auth.
-|
+| These callbacks are the SECURITY BOUNDARY for real-time data. The UI
+| hiding a button is never enough — every subscription is checked here.
 */
 
-// Who is online: authorized for any logged-in user, and the returned
-// array is what other subscribers receive in here()/joining()/leaving().
-//
-// NOTE the name: Echo's join() already prepends the wire prefix, so the
-// page subscribes to "presence-online" but Laravel matches on the BARE
-// name "online" — /broadcasting/auth strips "presence-"/"private-" from
-// the wire name before running these rules.
+// Presence: any logged-in user may appear in the online list.
 Broadcast::channel('online', function ($user) {
-    return ['id' => $user->id, 'name' => $user->name];
+    return [
+        'id' => $user->id,
+        'name' => $user->name,
+        'username' => $user->username,
+        'avatar' => $user->avatarUrl(),
+    ];
 });
 
-// A 1:1 conversation channel. The two ids in the name are always in
-// ascending order (sorted by both sender and listener, see MessageSent).
-// You may only join a conversation you are part of.
-Broadcast::channel('chat.{a}.{b}', function ($user, $a, $b) {
-    return (int) $user->id === (int) $a || (int) $user->id === (int) $b;
+// One private channel per conversation, shared by direct chats and groups.
+Broadcast::channel('conversation.{id}', function ($user, $id) {
+    $conversation = Conversation::with('group')->find($id);
+
+    if (! $conversation) {
+        return false;
+    }
+
+    if ($conversation->type === 'direct') {
+        return $conversation->isParticipant($user->id);
+    }
+
+    // Groups: membership is checked live on EVERY auth request, so
+    // removing a member revokes their access to future subscriptions.
+    return $conversation->group?->isMember($user->id) ?? false;
+});
+
+// Per-user channel for unread counts / account-specific notifications.
+Broadcast::channel('user.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
 });
