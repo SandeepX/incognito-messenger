@@ -589,17 +589,27 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
 .composer-bar textarea {
     flex: 1;
     min-width: 0;
+    box-sizing: border-box;
     resize: none;
-    min-height: 24px;
+    min-height: 0;
     max-height: 140px;
-    padding: 8px 4px;
+    /* Integer line box (20px) + 8px top/bottom padding = 36px for one line,
+       so the scroll height can never round above the element height. */
+    line-height: 20px;
+    padding: 8px 8px 8px 4px;
     border: 0;
     background: transparent;
     color: var(--text);
     outline: none;
-    line-height: 1.45;
-    field-sizing: content;
+    /* Short text must never show a scrollbar. The auto-grow script flips
+       this to "auto" only once the content passes max-height. */
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
+/* Keep the long-text scrollbar invisible (scrolling still works by wheel,
+   trackpad, touch and arrow keys) so it can never sit near the send button. */
+.composer-bar textarea::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .composer-bar textarea::placeholder { color: var(--muted); }
 .send-btn {
     width: 36px; height: 36px; flex: none; padding: 0; border: 0; border-radius: 50%;

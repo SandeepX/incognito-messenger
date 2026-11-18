@@ -1958,7 +1958,7 @@ async function openConversation(id) {
     if ($('jump-latest')) $('jump-latest').hidden = true;
     if ($('message-input')) {
         $('message-input').value = '';
-        $('message-input').style.height = 'auto';
+        autoGrowTextarea($('message-input'));
     }
     state.pendingAttachments = [];
     renderAttachmentPreviews();
@@ -2224,10 +2224,27 @@ function uploadMessage(formData) {
     });
 }
 
+/* Composer textarea grows with its content up to max-height (about 5-6
+   lines), then keeps that height and scrolls internally. Measuring with
+   height:auto avoids the sub-pixel overflow that used to force a scrollbar
+   on a single short line. */
+const COMPOSER_MAX_HEIGHT = 140;
+
 function autoGrowTextarea(el) {
     if (!el) return;
+    el.style.overflowY = 'hidden';
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+
+    // A composer inside the not-yet-open chat view has no layout box; keep
+    // its natural one-row height instead of measuring 0 and collapsing.
+    if (!el.offsetParent) {
+        el.style.height = '';
+        return;
+    }
+
+    const next = Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > COMPOSER_MAX_HEIGHT ? 'auto' : 'hidden';
 }
 
 /* Emoji picker */
@@ -2678,7 +2695,7 @@ function bindEvents() {
 
         const files = [...state.pendingAttachments];
         input.value = '';
-        input.style.height = 'auto';
+        autoGrowTextarea(input);
         state.pendingAttachments = [];
         clearAttachmentError();
         renderAttachmentPreviews();
@@ -2722,6 +2739,13 @@ function bindEvents() {
         if (now - state.lastWhisperSent < 800) return;
         state.lastWhisperSent = now;
         try { window.Echo.private(state.activeChannel).whisper('typing', { from: state.me.id }); } catch { /* ignore */ }
+    });
+
+    $('message-input')?.addEventListener('paste', (event) => {
+        // The pasted value lands after the default action, so measure once
+        // the browser has committed it.
+        const input = event.target;
+        requestAnimationFrame(() => autoGrowTextarea(input));
     });
 
     $('attach-btn')?.addEventListener('click', () => $('attachment-input')?.click());
@@ -3129,6 +3153,7 @@ function init() {
     renderNotesSkeleton();
     renderChatListSkeleton();
     renderEmojiPicker();
+    autoGrowTextarea($('message-input'));
     updateSendButton();
     updateNotificationBadge();
     bindEvents();
