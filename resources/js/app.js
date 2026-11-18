@@ -27,6 +27,8 @@ const state = {
     activeChannel: null,
     activeGroup: null,
     cursor: null,
+    loadingOlder: false,
+    unseen: 0,              // messages received while scrolled up
     typingTimer: null,
     lastWhisperSent: 0,
     selectedMembers: new Set(),
@@ -96,9 +98,54 @@ function isOnline(userId) {
     return state.online.has(Number(userId));
 }
 
-function scrollBottom() {
+function isNearBottom(threshold = 80) {
     const box = $('messages');
-    box.scrollTop = box.scrollHeight;
+    return box.scrollHeight - box.scrollTop - box.clientHeight <= threshold;
+}
+
+function updateJumpLatest() {
+    const box = $('messages');
+    const button = $('jump-latest');
+    const scrollable = box.scrollHeight - box.clientHeight > 24;
+
+    button.hidden = ! scrollable || isNearBottom();
+    button.textContent = state.unseen > 0
+        ? `New messages (${state.unseen}) ↓`
+        : 'Jump to latest ↓';
+}
+
+function scrollBottom(smooth = false) {
+    const box = $('messages');
+
+    if (typeof box.scrollTo === 'function') {
+        box.scrollTo({ top: box.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+    } else {
+        box.scrollTop = box.scrollHeight;
+    }
+
+    state.unseen = 0;
+    updateJumpLatest();
+}
+
+/**
+ * Normal messages sit at the bottom. A message taller than the viewport is
+ * aligned to the TOP instead, so its first line is readable immediately
+ * (the rest can be scrolled normally inside the message pane).
+ */
+function scrollToLatestRow(smooth = false) {
+    const box = $('messages');
+    const rows = box.querySelectorAll('.msg-row');
+    const last = rows[rows.length - 1];
+
+    if (! last || last.getBoundingClientRect().height <= box.clientHeight - 24) {
+        scrollBottom(smooth);
+        return;
+    }
+
+    const top = last.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    box.scrollTo({ top: Math.max(0, top - 8), behavior: smooth ? 'smooth' : 'auto' });
+    state.unseen = 0;
+    updateJumpLatest();
 }
 
 /* ================================================================
@@ -256,19 +303,80 @@ function updateChatHeader() {
     $('group-info-btn').hidden = state.active.type !== 'group';
 }
 
-function appendMessage(message, scroll = true) {
+function buildMessageRow(message) {
     const mine = message.sender_id === state.me.id;
     const row = document.createElement('div');
     row.className = `msg-row ${mine ? 'mine' : 'theirs'}`;
+    row.dataset.id = message.id ?? '';
     row.innerHTML = `
         <img class="avatar sm" src="${esc(message.sender_avatar)}" alt="">
         <div>
             <div class="bubble">${esc(message.body)}</div>
             <span class="msg-meta">${esc(message.sender_name)} · ${esc(message.time ?? formatTime(message.created_at))}</span>
         </div>`;
-    $('messages').appendChild(row);
-    if (scroll) scrollBottom();
+    return row;
 }
+
+function appendMessage(message, scroll = true) {
+    const row = buildMessageRow(message);
+    $('messages').appendChild(row);
+    if (scroll) scrollToLatestRow();
+    return row;
+}
+
+function prependMessages(messages) {
+    const box = $('messages');
+    const fragment = document.createDocumentFragment();
+    messages.forEach((message) => fragment.appendChild(buildMessageRow(message)));
+    box.insertBefore(fragment, box.firstChild);
+}
+
+/** Cursor pagination: load the previous page when the user reaches the top. */
+async function loadOlderMessages() {
+    if (state.loadingOlder || ! state.active || ! state.cursor) {
+        return;
+    }
+
+    const conversationId = state.active.id;
+    const cursor = state.cursor;
+    state.loadingOlder = true;
+
+    try {
+        const page = await api(`/api/conversations/${conversationId}?cursor=${encodeURIComponent(cursor)}`);
+        if (state.active?.id !== conversationId) return;
+
+        const box = $('messages');
+        const previousHeight = box.scrollHeight;
+        const previousTop = box.scrollTop;
+
+        // API returns newest-first; prepend in chronological order.
+        prependMessages([...page.data].reverse());
+
+        // Keep the same message under the user's eyes after prepending.
+        box.scrollTop = previousTop + (box.scrollHeight - previousHeight);
+        state.cursor = page.next_cursor;
+        updateJumpLatest();
+    } catch (error) {
+        toast(error.message);
+    } finally {
+        state.loadingOlder = false;
+    }
+}
+
+$('messages').addEventListener('scroll', () => {
+    if (isNearBottom()) {
+        state.unseen = 0;
+    }
+    if ($('messages').scrollTop <= 60 && state.cursor) {
+        loadOlderMessages();
+    }
+    updateJumpLatest();
+}, { passive: true });
+
+$('jump-latest').addEventListener('click', () => {
+    scrollToLatestRow(true);
+    $('message-input').focus();
+});
 
 function showTyping() {
     $('typing-label').textContent = `${state.active?.name ?? 'Someone'} is typing`;
@@ -310,11 +418,14 @@ async function openConversation(id) {
     state.active = conversation ? { ...conversation } : { id, type: 'direct' };
     state.activeGroup = null;
     state.cursor = null;
+    state.loadingOlder = false;
+    state.unseen = 0;
 
     $('empty-chat').style.display = 'none';
     $('chat').classList.add('open');
     $('app').classList.add('show-chat');
     $('messages').innerHTML = '';
+    $('jump-latest').hidden = true;
     $('message-input').value = '';
     hideTyping();
     updateChatHeader();
@@ -330,7 +441,7 @@ async function openConversation(id) {
         if (state.active?.id !== id) return; // user switched while loading
         state.cursor = history.next_cursor;
         [...history.data].reverse().forEach((message) => appendMessage(message, false));
-        scrollBottom();
+        scrollToLatestRow();
     } catch (error) {
         toast(error.message);
     }
@@ -341,7 +452,22 @@ async function openConversation(id) {
     window.Echo.private(channel)
         .listen('.MessageSent', (message) => {
             if (state.active?.id !== message.conversation_id) return;
-            appendMessage(message);
+
+            const wasAtBottom = isNearBottom();
+            const mine = message.sender_id === state.me.id;
+
+            appendMessage(message, false);
+
+            // Own messages always jump to the latest. Incoming messages only
+            // do so when the reader was already at the bottom; otherwise show
+            // a jump button so older messages stay readable.
+            if (mine || wasAtBottom) {
+                scrollToLatestRow();
+            } else {
+                state.unseen += 1;
+                updateJumpLatest();
+            }
+
             hideTyping();
         })
         .listenForWhisper('typing', (event) => {
@@ -415,8 +541,15 @@ $('message-input').addEventListener('keydown', (event) => {
 });
 
 $('message-input').addEventListener('input', (event) => {
+    const wasAtBottom = isNearBottom();
+
     event.target.style.height = 'auto';
     event.target.style.height = `${Math.min(event.target.scrollHeight, 140)}px`;
+
+    // A growing textarea shrinks the message pane; keep the latest bubble in view.
+    if (wasAtBottom) {
+        scrollToLatestRow();
+    }
 
     if (! state.activeChannel) return;
 

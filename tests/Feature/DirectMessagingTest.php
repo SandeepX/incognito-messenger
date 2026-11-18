@@ -135,6 +135,35 @@ class DirectMessagingTest extends TestCase
         $this->assertSame($be, $eveList[0]['id']);
     }
 
+    public function test_history_is_cursor_paginated_for_older_messages(): void
+    {
+        $alice = $this->userWithProfile('alice');
+        $bob = $this->userWithProfile('bob');
+        $id = $this->startConversation($alice, $bob);
+
+        for ($i = 1; $i <= 35; $i++) {
+            $this->actingAs($alice)
+                ->postJson("/api/conversations/{$id}/messages", ['body' => "message {$i}"])
+                ->assertCreated();
+        }
+
+        $first = $this->actingAs($bob)->getJson("/api/conversations/{$id}")->assertOk()->json();
+
+        $this->assertCount(30, $first['data']);
+        $this->assertSame('message 35', $first['data'][0]['body']);
+        $this->assertNotNull($first['next_cursor']);
+
+        $second = $this->actingAs($bob)
+            ->getJson("/api/conversations/{$id}?cursor=".urlencode($first['next_cursor']))
+            ->assertOk()
+            ->json();
+
+        $this->assertCount(5, $second['data']);
+        $this->assertSame('message 5', $second['data'][0]['body']);
+        $this->assertSame('message 1', $second['data'][4]['body']);
+        $this->assertNull($second['next_cursor']);
+    }
+
     public function test_user_cannot_open_a_conversation_with_themselves(): void
     {
         $alice = $this->userWithProfile('alice');

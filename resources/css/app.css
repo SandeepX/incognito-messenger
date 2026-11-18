@@ -29,16 +29,28 @@ body {
     background: var(--bg);
     color: var(--text);
     overflow: hidden;
+    overscroll-behavior: none;
     font-size: 14px;
 }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 a { color: var(--brand-2); text-decoration: none; }
 
-.app { display: grid; grid-template-columns: 330px minmax(0, 1fr); height: 100vh; }
+/* dvh keeps the composer above mobile browser toolbars; vh is the fallback. */
+.app {
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+}
+
+/* Grid/flex children default to min-height:auto, which lets content stretch
+   the shell. Every fixed pane must be allowed to shrink to zero first. */
+main { display: flex; min-width: 0; min-height: 0; }
 
 /* ---------- sidebar ---------- */
-.sidebar { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line); }
+.sidebar { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--panel); border-right: 1px solid var(--line); }
 .brand-bar { display: flex; align-items: center; gap: 10px; padding: 18px 18px 14px; }
 .brand-icon { font-size: 24px; }
 .brand-bar strong { font-size: 16px; letter-spacing: -.02em; }
@@ -72,7 +84,7 @@ a { color: var(--brand-2); text-decoration: none; }
 .icon-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); display: grid; place-items: center; }
 .icon-btn:hover { border-color: var(--brand); color: var(--brand-2); }
 
-.conv-list { list-style: none; margin: 0; padding: 0 8px 16px; overflow-y: auto; flex: 1; }
+.conv-list { list-style: none; margin: 0; padding: 0 8px 16px; overflow-y: auto; flex: 1 1 auto; min-height: 0; overscroll-behavior: contain; }
 .conv-item { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 12px; cursor: pointer; border: 1px solid transparent; }
 .conv-item:hover { background: var(--panel-2); }
 .conv-item.active { background: #12344c; border-color: #1d5576; }
@@ -87,9 +99,9 @@ a { color: var(--brand-2); text-decoration: none; }
 .empty-list { color: var(--muted); font-size: 12.5px; text-align: center; padding: 26px 14px; line-height: 1.5; }
 
 /* ---------- chat ---------- */
-.chat { display: none; flex-direction: column; min-width: 0; height: 100%; }
+.chat { display: none; flex-direction: column; position: relative; flex: 1; min-width: 0; min-height: 0; height: 100%; }
 .chat.open { display: flex; }
-.chat-head { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.chat-head { display: flex; align-items: center; gap: 12px; flex: none; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); z-index: 2; }
 .chat-head .who { flex: 1; min-width: 0; }
 .chat-head .who strong { display: block; font-size: 15px; }
 .chat-head .who small { color: var(--muted); font-size: 12px; }
@@ -104,25 +116,56 @@ a { color: var(--brand-2); text-decoration: none; }
 .dots i:nth-child(3) { animation-delay: .3s; }
 @keyframes bounce { 0%,60%,100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-5px); opacity: 1; } }
 
-.messages { flex: 1; overflow-y: auto; padding: 20px clamp(12px, 5vw, 60px); display: flex; flex-direction: column; gap: 10px; }
+/* Only this pane scrolls. min-height:0 is what stops flex from expanding it
+   to fit every message and pushing the composer off-screen. */
+.messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    padding: 20px clamp(12px, 5vw, 60px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    scrollbar-gutter: stable;
+}
 .day-sep { align-self: center; color: var(--muted); font-size: 11px; margin: 8px 0; }
 .msg-row { display: flex; align-items: flex-end; gap: 8px; max-width: 76%; }
 .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
 .msg-row.theirs { align-self: flex-start; }
 .msg-row .avatar { width: 28px; height: 28px; }
+.msg-row > div { min-width: 0; }
 .bubble { padding: 9px 13px; border-radius: 16px; background: var(--panel-2); border: 1px solid var(--line); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mine .bubble { background: var(--brand); border-color: var(--brand); color: #fff; border-bottom-right-radius: 5px; }
 .theirs .bubble { border-bottom-left-radius: 5px; }
 .msg-meta { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); }
 .mine .msg-meta { text-align: right; color: #e0f2fe; opacity: .85; }
 
-.composer { display: flex; gap: 10px; align-items: flex-end; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); }
-.composer textarea { flex: 1; resize: none; max-height: 140px; min-height: 44px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); outline: none; }
+.composer { position: relative; display: flex; gap: 10px; align-items: flex-end; flex: none; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); z-index: 2; }
+.composer textarea { flex: 1; min-width: 0; resize: none; max-height: 140px; min-height: 44px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); outline: none; field-sizing: content; }
 .composer textarea:focus { border-color: var(--brand); }
 .send-btn { height: 44px; padding: 0 20px; border: 0; border-radius: 12px; background: var(--brand); color: #fff; font-weight: 600; }
 .send-btn:hover { background: var(--brand-2); }
 .send-btn:disabled { opacity: .5; cursor: default; }
-.composer-hint { color: var(--muted); font-size: 10.5px; margin: 0 18px 10px; }
+.composer-hint { color: var(--muted); font-size: 10.5px; margin: 0 18px 10px; flex: none; }
+
+/* Anchored to the composer so it stays above it even when the textarea grows. */
+.jump-latest {
+    position: absolute;
+    right: 18px;
+    bottom: calc(100% + 10px);
+    z-index: 5;
+    padding: 8px 14px;
+    border: 1px solid var(--brand);
+    border-radius: 999px;
+    background: var(--panel-2);
+    color: var(--brand-2);
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: 0 10px 25px rgba(0,0,0,.4);
+}
+.jump-latest[hidden] { display: none; }
 
 .empty-chat { flex: 1; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 30px; }
 .empty-chat div { max-width: 350px; line-height: 1.6; }
@@ -149,15 +192,20 @@ a { color: var(--brand-2); text-decoration: none; }
 
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 11px 18px; font-size: 13px; opacity: 0; pointer-events: none; transition: .25s; z-index: 80; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.offline { display: none; background: #7f1d1d; color: #fee2e2; text-align: center; font-size: 12px; padding: 5px; }
+.offline { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 90; background: #7f1d1d; color: #fee2e2; text-align: center; font-size: 12px; padding: 5px; }
 .offline.show { display: block; }
+.offline.show + .app { padding-top: 27px; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 820px) {
-    .app { grid-template-columns: 1fr; }
-    .sidebar { display: flex; }
-    .chat { display: none; }
+    .app { grid-template-columns: minmax(0, 1fr); }
+    /* One pane at a time. Without this the sidebar and <main> occupy separate
+       grid rows and the conversation list is squeezed into half the screen. */
+    .app:not(.show-chat) > main { display: none; }
     .app.show-chat .sidebar { display: none; }
+    /* Beats the base .chat.open rule so Back never leaves a stray chat pane. */
+    .app:not(.show-chat) .chat { display: none; }
+    .app.show-chat > main { display: flex; }
     .app.show-chat .chat { display: flex; }
     .back-btn { display: block; }
     .msg-row { max-width: 88%; }

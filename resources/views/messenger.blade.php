@@ -72,6 +72,7 @@
             <div id="messages" class="messages" aria-live="polite"></div>
 
             <form id="composer" class="composer">
+                <button id="jump-latest" class="jump-latest" type="button" hidden>Jump to latest ↓</button>
                 <textarea id="message-input" rows="1" placeholder="Write a message…" autocomplete="off"></textarea>
                 <button id="send-btn" class="send-btn" type="submit">Send</button>
             </form>
