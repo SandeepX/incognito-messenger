@@ -60,9 +60,11 @@ main { display: flex; min-width: 0; min-height: 0; }
 .slim-scroll::-webkit-scrollbar-track { background: transparent; }
 .slim-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 
-/* The inbox list still scrolls, but its scrollbar stays out of the way. */
-.sidebar-scroll.slim-scroll { scrollbar-width: none; }
-.sidebar-scroll.slim-scroll::-webkit-scrollbar { display: none; }
+/* The inbox lists still scroll, but their scrollbars stay out of the way. */
+.sidebar-scroll.slim-scroll,
+.right-panel-scroll.slim-scroll { scrollbar-width: none; }
+.sidebar-scroll.slim-scroll::-webkit-scrollbar,
+.right-panel-scroll.slim-scroll::-webkit-scrollbar { display: none; }
 
 /* ---------- right panel: friends + requests ---------- */
 .right-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--panel); border-left: 1px solid var(--line); }
@@ -214,8 +216,9 @@ main { display: flex; min-width: 0; min-height: 0; }
     display: flex;
     flex-direction: column;
     gap: 10px;
-    scrollbar-gutter: stable;
+    scrollbar-width: none;
 }
+.messages::-webkit-scrollbar { display: none; }
 .day-sep { align-self: center; color: var(--muted); font-size: 11px; margin: 8px 0; }
 .msg-row { display: flex; align-items: flex-end; gap: 8px; max-width: 76%; }
 .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
