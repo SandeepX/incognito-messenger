@@ -8,6 +8,7 @@ use App\Events\UnreadCountsUpdated;
 use App\Models\Conversation;
 use App\Models\Group;
 use App\Models\User;
+use App\Support\AvatarUpload;
 use App\Support\ReverbConnectionTerminator;
 use App\Support\UnreadCounter;
 use Illuminate\Http\JsonResponse;
@@ -56,10 +57,10 @@ class GroupController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:80'],
             'description' => ['nullable', 'string', 'max:300'],
-            'avatar' => ['nullable', 'file', 'image', 'mimes:jpeg,png,gif,webp', 'max:2048'],
+            'avatar' => AvatarUpload::rules(false),
             'member_ids' => ['required', 'array', 'min:1'],
             'member_ids.*' => ['integer', 'exists:users,id'],
-        ]);
+        ], AvatarUpload::messages());
 
         $me = auth()->id();
         $memberIds = collect($data['member_ids'])

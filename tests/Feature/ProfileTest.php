@@ -74,8 +74,14 @@ class ProfileTest extends TestCase
         ])->assertSessionHasErrors('avatar');
 
         $this->actingAs($user)->post('/profile/avatar', [
-            'avatar' => UploadedFile::fake()->image('huge.jpg')->size(3000),
+            'avatar' => UploadedFile::fake()->image('huge.jpg')->size(11000),
         ])->assertSessionHasErrors('avatar');
+
+        // A typical phone photo (a few MB) must be accepted; the old 2 MB
+        // cap rejected these before Laravel could validate them.
+        $this->actingAs($user)->post('/profile/avatar', [
+            'avatar' => UploadedFile::fake()->image('phone-photo.jpg')->size(3000),
+        ])->assertRedirect();
 
         $this->actingAs($user)->post('/profile/avatar', [
             'avatar' => UploadedFile::fake()->image('me.jpg', 60, 60),

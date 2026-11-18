@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Profile\ProfileUpdateRequest;
 use App\Models\UserProfile;
+use App\Support\AvatarUpload;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -39,9 +40,10 @@ class ProfileController extends Controller
      */
     public function updateAvatar(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'avatar' => ['required', 'file', 'image', 'mimes:jpeg,png,gif,webp', 'max:2048'],
-        ]);
+        $validated = $request->validate(
+            ['avatar' => AvatarUpload::rules()],
+            AvatarUpload::messages(),
+        );
 
         $profile = $request->user()->profile ?: UserProfile::create([
             'user_id' => $request->user()->id,

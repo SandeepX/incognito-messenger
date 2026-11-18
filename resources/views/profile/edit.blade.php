@@ -11,11 +11,29 @@
 
     <form method="POST" action="{{ route('profile.avatar') }}" enctype="multipart/form-data">
         @csrf
-        <label for="avatar">Profile picture (JPEG, PNG, GIF or WebP — max 2 MB)</label>
+        <label for="avatar">Profile picture (JPEG, PNG, GIF or WebP — max 10 MB)</label>
         <input id="avatar" type="file" name="avatar" accept="image/jpeg,image/png,image/gif,image/webp" required
                style="font-size:13px;color:#cbd5e1">
+        <div id="avatar-error" class="alert alert-error" hidden style="margin-top:10px"></div>
         <button class="primary" type="submit" style="margin-top:10px">Upload picture</button>
     </form>
+
+    <script>
+        // Fail fast with a clear message instead of waiting for a round trip.
+        (function () {
+            const input = document.getElementById('avatar');
+            const error = document.getElementById('avatar-error');
+            input.closest('form').addEventListener('submit', function (event) {
+                error.hidden = true;
+                const file = input.files[0];
+                if (file && file.size > 10 * 1024 * 1024) {
+                    event.preventDefault();
+                    error.textContent = 'That picture is larger than 10 MB. Please choose a smaller image.';
+                    error.hidden = false;
+                }
+            });
+        })();
+    </script>
 
     <hr style="border:0;border-top:1px solid #334155;margin:24px 0">
 
