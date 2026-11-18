@@ -35,6 +35,17 @@ class Conversation extends Model
         return $this->hasOne(Message::class)->latestOfMany();
     }
 
+    public function messageRequest(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(MessageRequest::class);
+    }
+
+    /** True while this thread is still an unaccepted message request. */
+    public function isPendingRequest(): bool
+    {
+        return $this->messageRequest()->where('status', 'pending')->exists();
+    }
+
     public static function directKey(int $a, int $b): string
     {
         // Sorted so Alice→Bob and Bob→Alice resolve to the same thread.

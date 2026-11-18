@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\MessageSeen;
 use App\Events\UnreadCountsUpdated;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -20,6 +21,12 @@ class ConversationController extends Controller
         $me = auth()->id();
 
         $conversations = auth()->user()->conversations()
+            // Message requests are deliberately absent from the normal list
+            // until the recipient accepts them.
+            ->where(function ($query) {
+                $query->doesntHave('messageRequest')
+                    ->orWhereHas('messageRequest', fn ($q) => $q->where('status', 'accepted'));
+            })
             ->with([
                 'participants.profile',
                 'group' => fn ($q) => $q->withCount('members'),
@@ -71,30 +78,46 @@ class ConversationController extends Controller
     {
         $this->authorize('view', $conversation);
 
-        $me = auth()->id();
+        abort_if($conversation->isPendingRequest(), 403, 'Accept or delete this message request first.');
 
-        DB::transaction(function () use ($conversation, $me) {
+        $me = auth()->id();
+        $newReads = [];
+
+        DB::transaction(function () use ($conversation, $me, &$newReads) {
             $ids = $conversation->messages()
                 ->where('sender_id', '!=', $me)
                 ->whereDoesntHave('reads', fn ($q) => $q->where('user_id', $me))
                 ->pluck('id');
 
             if ($ids->isNotEmpty()) {
-                MessageRead::insertOrIgnore($ids->map(fn ($id) => [
+                $rows = $ids->map(fn ($id) => [
                     'message_id' => $id,
                     'user_id' => $me,
                     'read_at' => now(),
-                ])->all());
+                ])->all();
+
+                MessageRead::insertOrIgnore($rows);
+
+                // insertOrIgnore skips duplicates; announce only rows we created.
+                $newReads = MessageRead::where('user_id', $me)
+                    ->whereIn('message_id', $ids)
+                    ->with(['user.profile', 'message'])
+                    ->get()
+                    ->all();
             }
 
             $conversation->participants()->updateExistingPivot($me, ['last_read_at' => now()]);
         });
 
+        foreach ($newReads as $read) {
+            broadcast(new MessageSeen($read));
+        }
+
         // Other tabs of the same user should drop their badges too.
         broadcast(new UnreadCountsUpdated($me, UnreadCounter::for($me)));
 
         $page = $conversation->messages()
-            ->with('sender.profile')
+            ->with(['sender.profile', 'reads.user.profile', 'attachments'])
             ->orderByDesc('id')
             ->cursorPaginate(30);
 
@@ -105,12 +128,17 @@ class ConversationController extends Controller
         ]);
     }
 
-    /** Find or create the single 1:1 conversation with another user. */
+    /** Find or create the single 1:1 conversation with an accepted friend. */
     public function storeDirect(User $user): JsonResponse
     {
         $me = auth()->id();
 
         abort_if($user->id === $me, 422, 'You cannot chat with yourself.');
+        abort_unless(
+            auth()->user()->isFriendsWith($user->id),
+            403,
+            'Only accepted friends can start a conversation. Send a friend request or message request first.',
+        );
 
         $key = Conversation::directKey($me, $user->id);
 

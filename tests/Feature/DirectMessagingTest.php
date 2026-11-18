@@ -13,6 +13,8 @@ class DirectMessagingTest extends TestCase
 
     private function startConversation($alice, $bob): int
     {
+        $this->befriend($alice, $bob);
+
         return $this->actingAs($alice)
             ->postJson("/api/conversations/direct/{$bob->id}")
             ->assertOk()

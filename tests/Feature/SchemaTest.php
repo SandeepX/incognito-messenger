@@ -21,6 +21,12 @@ class SchemaTest extends TestCase
             'group_members' => ['group_id', 'user_id', 'role'],
             'messages' => ['conversation_id', 'sender_id', 'body'],
             'message_reads' => ['message_id', 'user_id', 'read_at'],
+            'friendships' => ['user_id', 'friend_id', 'pair_key'],
+            'friend_requests' => ['sender_id', 'recipient_id', 'pair_key', 'status'],
+            'message_requests' => ['sender_id', 'recipient_id', 'conversation_id', 'pair_key', 'status'],
+            'message_attachments' => ['message_id', 'storage_path', 'mime_type', 'file_size', 'attachment_type'],
+            'notes' => ['user_id', 'content', 'expires_at'],
+            'notifications' => ['user_id', 'type', 'data', 'read_at'],
         ];
 
         foreach ($expected as $table => $columns) {
@@ -39,6 +45,10 @@ class SchemaTest extends TestCase
         $this->assertTrue($this->hasUniqueIndex('conversation_participants', 'conversation_participants_conversation_id_user_id_unique'));
         $this->assertTrue($this->hasUniqueIndex('group_members', 'group_members_group_id_user_id_unique'));
         $this->assertTrue($this->hasUniqueIndex('message_reads', 'message_reads_message_id_user_id_unique'));
+        $this->assertTrue($this->hasUniqueIndex('friendships', 'friendships_pair_key_unique'));
+        $this->assertTrue($this->hasUniqueIndex('friend_requests', 'friend_requests_pair_key_unique'));
+        $this->assertTrue($this->hasUniqueIndex('message_requests', 'message_requests_pair_key_unique'));
+        $this->assertTrue($this->hasUniqueIndex('message_requests', 'message_requests_conversation_id_unique'));
     }
 
     private function hasUniqueIndex(string $table, string $index): bool

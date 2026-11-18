@@ -66,7 +66,7 @@ class ProfileTest extends TestCase
 
     public function test_avatar_upload_validates_type_and_size(): void
     {
-        Storage::fake('local');
+        Storage::fake('minio');
         $user = $this->userWithProfile('avataruser');
 
         $this->actingAs($user)->post('/profile/avatar', [
@@ -89,12 +89,12 @@ class ProfileTest extends TestCase
 
         $profile = $user->profile()->firstOrFail();
         $this->assertNotNull($profile->avatar_path);
-        Storage::disk('local')->assertExists($profile->avatar_path);
+        Storage::disk('minio')->assertExists($profile->avatar_path);
     }
 
     public function test_avatar_route_only_serves_existing_files(): void
     {
-        Storage::fake('local');
+        Storage::fake('minio');
         $user = $this->userWithProfile('avataruser');
 
         $this->actingAs($user)->post('/profile/avatar', [

@@ -50,10 +50,10 @@ class ProfileController extends Controller
             'username' => $request->user()->username,
         ]);
 
-        $path = $request->file('avatar')->store('avatars', 'local');
+        $path = $request->file('avatar')->store('avatars', 'minio');
 
         if ($profile->avatar_path) {
-            Storage::disk('local')->delete($profile->avatar_path);
+            Storage::disk('minio')->delete($profile->avatar_path);
         }
 
         $profile->update(['avatar_path' => $path]);

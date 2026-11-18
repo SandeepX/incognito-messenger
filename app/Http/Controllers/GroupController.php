@@ -7,6 +7,7 @@ use App\Events\GroupUpdated;
 use App\Events\UnreadCountsUpdated;
 use App\Models\Conversation;
 use App\Models\Group;
+use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Support\AvatarUpload;
 use App\Support\ReverbConnectionTerminator;
@@ -71,7 +72,7 @@ class GroupController extends Controller
             ->all();
 
         $avatarPath = $request->hasFile('avatar')
-            ? $request->file('avatar')->store('avatars', 'local')
+            ? $request->file('avatar')->store('avatars', 'minio')
             : null;
 
         $group = DB::transaction(function () use ($data, $me, $memberIds, $avatarPath) {
@@ -114,9 +115,9 @@ class GroupController extends Controller
 
         if ($request->hasFile('avatar')) {
             if ($group->avatar_path) {
-                Storage::disk('local')->delete($group->avatar_path);
+                Storage::disk('minio')->delete($group->avatar_path);
             }
-            $group->avatar_path = $request->file('avatar')->store('avatars', 'local');
+            $group->avatar_path = $request->file('avatar')->store('avatars', 'minio');
         }
 
         $group->name = $data['name'];
@@ -201,6 +202,11 @@ class GroupController extends Controller
             ->map(fn ($id) => (int) $id)
             ->all();
         $conversationId = $group->conversation->id;
+        $avatarPath = $group->avatar_path;
+        $attachmentPaths = MessageAttachment::whereHas(
+            'message',
+            fn ($q) => $q->where('conversation_id', $conversationId),
+        )->pluck('storage_path')->all();
 
         // Tell every browser to leave before the channel disappears.
         foreach ($memberIds as $id) {
@@ -210,6 +216,14 @@ class GroupController extends Controller
         // Cascades remove the conversation, its participants, messages,
         // read receipts and membership rows.
         $group->delete();
+
+        // Cascade cannot reach MinIO, so remove the objects explicitly.
+        if ($avatarPath) {
+            Storage::disk('minio')->delete($avatarPath);
+        }
+        if ($attachmentPaths) {
+            Storage::disk('minio')->delete($attachmentPaths);
+        }
 
         foreach ($memberIds as $id) {
             ReverbConnectionTerminator::forUser($id);

@@ -4,6 +4,52 @@
 name: incognito-messenger
 
 services:
+  # ---------------- MinIO: private S3-compatible object storage ----------------
+  # Built locally because the official minio/minio image is no longer public;
+  # the image is identical MinIO server from the Alpine package repository.
+  minio:
+    build:
+      context: ./docker/minio
+    image: incognito-minio:local
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      # 9000/9001 are used by another local service on this machine, so the
+      # host ports are shifted. Inside the network MinIO still uses 9000.
+      - "19000:9000"
+      - "19001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - messenger
+
+  # ---------------- One-shot: create the private bucket ----------------
+  minio-init:
+    build:
+      context: ./docker/minio
+    image: incognito-minio:local
+    entrypoint: ["/bin/sh", "/init.sh"]
+    restart: "no"
+    env_file: .env
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - ./docker/minio/init.sh:/init.sh:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - messenger
+
   # ---------------- One-shot: create schema + seed demo accounts ----------------
   # app, reverb and webserver wait for this to exit successfully, so
   # Reverb never races the first migration (SQLite file + tables).
@@ -57,6 +103,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
     volumes:
       # Only the sqlite file lives here — migrations/ stays untouched in
       # the image, so code changes are never shadowed by the volume.
@@ -94,6 +142,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
     ports:
       # Exposed so browsers on your machine can open ws://localhost:8080
       - "8080:8080"
@@ -110,3 +160,4 @@ networks:
 volumes:
   db-data:
   assets:
+  minio-data:

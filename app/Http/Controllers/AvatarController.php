@@ -2,25 +2,25 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AvatarController extends Controller
 {
     /**
-     * Avatars live in private storage; this route is the only public door.
-     * The route pattern already restricts the filename, and basename()
-     * protects against path traversal if this method is reused elsewhere.
+     * Avatars live in private MinIO storage; this route is the only door.
+     * The route pattern restricts the filename, and basename() protects
+     * against traversal if this method is reused elsewhere.
      */
-    public function show(string $filename): BinaryFileResponse
+    public function show(string $filename): Response
     {
+        $disk = Storage::disk('minio');
         $path = 'avatars/'.basename($filename);
 
-        abort_unless(Storage::disk('local')->exists($path), 404);
+        abort_unless($disk->exists($path), 404);
 
-        return response()->file(Storage::disk('local')->path($path), [
-            'Content-Type' => Storage::disk('local')->mimeType($path),
-            'Cache-Control' => 'public, max-age=86400',
-        ]);
+        return response($disk->get($path), 200)
+            ->header('Content-Type', $disk->mimeType($path) ?: 'application/octet-stream')
+            ->header('Cache-Control', 'public, max-age=86400');
     }
 }

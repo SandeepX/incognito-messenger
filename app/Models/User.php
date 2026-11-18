@@ -50,6 +50,64 @@ class User extends Authenticatable
         return $this->hasMany(Message::class, 'sender_id');
     }
 
+    public function sentFriendRequests(): HasMany
+    {
+        return $this->hasMany(FriendRequest::class, 'sender_id');
+    }
+
+    public function receivedFriendRequests(): HasMany
+    {
+        return $this->hasMany(FriendRequest::class, 'recipient_id');
+    }
+
+    public function friendships(): HasMany
+    {
+        return $this->hasMany(Friendship::class);
+    }
+
+    /** Accepted friends only — both directions are stored as rows. */
+    public function friends(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'friendships', 'user_id', 'friend_id')
+            ->withTimestamps();
+    }
+
+    public function sentMessageRequests(): HasMany
+    {
+        return $this->hasMany(MessageRequest::class, 'sender_id');
+    }
+
+    public function receivedMessageRequests(): HasMany
+    {
+        return $this->hasMany(MessageRequest::class, 'recipient_id');
+    }
+
+    public function messageReads(): HasMany
+    {
+        return $this->hasMany(MessageRead::class);
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(Note::class);
+    }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
+
+    public function isFriendsWith(int $userId): bool
+    {
+        return $this->friends()->whereKey($userId)->exists();
+    }
+
+    /** @return array<int, int> */
+    public function friendIds(): array
+    {
+        return $this->friends()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+    }
+
     public function getUsernameAttribute(): string
     {
         return $this->profile?->username ?? Str::slug($this->name);

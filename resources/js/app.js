@@ -33,6 +33,15 @@ const state = {
     lastWhisperSent: 0,
     selectedMembers: new Set(),
     settingsGroupId: null,
+    activeTab: 'chats',
+    friends: [],
+    friendRequests: { incoming: [], outgoing: [] },
+    messageRequests: { incoming: [], outgoing: [] },
+    notes: [],
+    activeNote: null,
+    currentRequest: null,
+    pendingAttachments: [],
+    notificationCount: 0,
 };
 
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
@@ -175,6 +184,19 @@ window.Echo.private(`user.${state.me.id}`)
             c.unread = event.counts?.[c.id] ?? 0;
         });
         renderConversationList();
+    })
+    .listen('.ConversationsUpdated', () => {
+        loadConversations();
+    })
+    .listen('.NotificationCreated', (event) => {
+        state.notificationCount = event.unread_count ?? state.notificationCount + 1;
+        updateNotificationBadge();
+        toast(notificationText(event));
+        if ($('notifications-modal').classList.contains('show')) loadNotifications();
+        // Friend/request/note counters can all change from one event.
+        loadFriends();
+        loadMessageRequests();
+        loadNotes();
     });
 
 window.Echo.connector.pusher.connection.bind('state_change', (states) => {
@@ -208,8 +230,9 @@ function renderConversationList() {
     }
 
     list.innerHTML = state.conversations.map((c) => {
-        const preview = c.last_message
-            ? `${c.last_message.sender_id === state.me.id ? 'You: ' : ''}${c.last_message.body}`
+        const last = c.last_message;
+        const preview = last
+            ? `${last.sender_id === state.me.id ? 'You: ' : ''}${last.body || (last.attachments?.length ? `📎 ${last.attachments[0].original_filename}` : '')}`
             : 'No messages yet';
         const dot = c.type === 'direct' && isOnline(c.peer_id)
             ? '<span class="status-dot online"></span>' : '';
@@ -271,6 +294,19 @@ $('user-search').addEventListener('input', debounce(async (event) => {
             $('search-results').innerHTML = '';
             $('user-search').value = '';
             try {
+                const isFriend = user.is_friend ?? state.friends.some((friend) => friend.id === user.id);
+
+                if (! isFriend) {
+                    // Non-friends may never open a normal thread — only a request.
+                    if (user.conversation_id) {
+                        toast('You are not friends yet. Accept or send a message request first.');
+                        switchTab('requests');
+                        return;
+                    }
+                    openRequestComposer(user);
+                    return;
+                }
+
                 let conversationId = user.conversation_id;
                 if (! conversationId) {
                     const result = await api(`/api/conversations/direct/${user.id}`, { method: 'POST' });
@@ -303,6 +339,37 @@ function updateChatHeader() {
     $('group-info-btn').hidden = state.active.type !== 'group';
 }
 
+function attachmentHtml(message) {
+    const items = message.attachments ?? [];
+    if (! items.length) return '';
+
+    return `<div class="msg-attachments">${items.map((a) => {
+        if (a.attachment_type === 'image') {
+            return `<img class="msg-image" data-preview="${esc(a.preview_url)}" data-download="${esc(a.download_url)}"
+                        src="${esc(a.preview_url)}" alt="${esc(a.original_filename)}" loading="lazy">`;
+        }
+        return `<div class="file-card">
+                    <span>📄</span>
+                    <span class="body"><span class="file-name">${esc(a.original_filename)}</span><br>
+                        <span class="file-size">${esc(a.size_label)} · ${esc(a.mime_type)}</span></span>
+                    <a href="${esc(a.download_url)}" download title="Download">⬇</a>
+                </div>`;
+    }).join('')}</div>`;
+}
+
+function statusHtml(message) {
+    if (message.sender_id !== state.me.id) return '';
+    const seen = message.seen_by ?? [];
+
+    if (message.status === 'seen' && seen.length) {
+        const avatars = seen.slice(0, 3).map((s) => `<img src="${esc(s.avatar)}" alt="${esc(s.name)}" title="${esc(s.name)}">`).join('');
+        return `<div class="seen-line">${avatars}<span>Seen${seen.length > 1 ? ` by ${seen.length}` : ''}</span></div>`;
+    }
+
+    const label = message.status === 'sent' ? 'Sent' : 'Delivered ✓';
+    return `<div class="status-line" data-status-for="${message.id}">${label}</div>`;
+}
+
 function buildMessageRow(message) {
     const mine = message.sender_id === state.me.id;
     const row = document.createElement('div');
@@ -311,8 +378,10 @@ function buildMessageRow(message) {
     row.innerHTML = `
         <img class="avatar sm" src="${esc(message.sender_avatar)}" alt="">
         <div>
-            <div class="bubble">${esc(message.body)}</div>
+            ${message.body ? `<div class="bubble">${esc(message.body)}</div>` : ''}
+            ${attachmentHtml(message)}
             <span class="msg-meta">${esc(message.sender_name)} · ${esc(message.time ?? formatTime(message.created_at))}</span>
+            ${statusHtml(message)}
         </div>`;
     return row;
 }
@@ -470,6 +539,37 @@ async function openConversation(id) {
 
             hideTyping();
         })
+        .listen('.MessageSeen', (event) => {
+            const row = [...$('messages').querySelectorAll('.msg-row')]
+                .find((el) => Number(el.dataset.id) === Number(event.message_id));
+            if (! row) return;
+
+            if (event.user_id === state.me.id) return; // own read is implicit
+
+            const reader = {
+                user_id: event.user_id,
+                name: event.name,
+                avatar: event.avatar,
+                read_at: event.read_at,
+            };
+            const line = document.createElement('div');
+            line.className = 'seen-line';
+            line.innerHTML = `<img src="${esc(event.avatar)}" alt="${esc(event.name)}" title="${esc(event.name)}"><span>Seen</span>`;
+            row.querySelector('.status-line')?.remove();
+            row.querySelector('.seen-line')?.remove();
+            row.querySelector('div:last-child')?.appendChild(line);
+
+            // Keep the conversation-preview status in sync without a refresh.
+            const conversation = state.conversations.find((c) => c.id === event.conversation_id);
+            if (conversation?.last_message?.id === event.message_id) {
+                const readers = conversation.last_message.seen_by ?? [];
+                if (! readers.some((seen) => seen.user_id === event.user_id)) {
+                    conversation.last_message.status = 'seen';
+                    conversation.last_message.seen_by = [...readers, reader];
+                    renderConversationList();
+                }
+            }
+        })
         .listenForWhisper('typing', (event) => {
             if (state.active?.id !== id || event.from === state.me.id) return;
             showTyping();
@@ -508,27 +608,67 @@ async function openConversation(id) {
  * Composing + typing whispers
  * ================================================================ */
 
+/** XHR gives us real upload progress; fetch does not. */
+function uploadMessage(formData) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `/api/conversations/${state.active.id}/messages`);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.setRequestHeader('X-CSRF-TOKEN', csrf());
+
+        xhr.upload.addEventListener('progress', (event) => {
+            if (! event.lengthComputable) return;
+            const percent = Math.round((event.loaded / event.total) * 100);
+            $('upload-progress').hidden = false;
+            $('upload-progress').querySelector('.bar').style.width = `${percent}%`;
+        });
+
+        xhr.addEventListener('load', () => {
+            $('upload-progress').hidden = true;
+            $('upload-progress').querySelector('.bar').style.width = '0%';
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(JSON.parse(xhr.responseText));
+            } else {
+                let message = `Request failed (${xhr.status})`;
+                try { message = JSON.parse(xhr.responseText).message ?? message; } catch { /* ignore */ }
+                reject(new Error(message));
+            }
+        });
+        xhr.addEventListener('error', () => {
+            $('upload-progress').hidden = true;
+            reject(new Error('Upload failed. Check your connection and try again.'));
+        });
+
+        xhr.send(formData);
+    });
+}
+
 $('composer').addEventListener('submit', async (event) => {
     event.preventDefault();
     if (! state.active) return;
 
     const input = $('message-input');
     const body = input.value.trim();
-    if (! body) return;
+    if (! body && ! state.pendingAttachments.length) return;
 
+    const files = [...state.pendingAttachments];
     input.value = '';
     input.style.height = 'auto';
+    state.pendingAttachments = [];
+    renderAttachmentPreviews();
+
+    const data = new FormData();
+    if (body) data.set('body', body);
+    files.forEach((file) => data.append('attachments[]', file));
 
     try {
         // Our own bubble arrives back over the WebSocket, just like everyone
         // else's — one render path for both sides.
-        await api(`/api/conversations/${state.active.id}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ body }),
-        });
+        await uploadMessage(data);
     } catch (error) {
-        input.value = body;
+        if (body) input.value = body;
+        state.pendingAttachments = files;
+        renderAttachmentPreviews();
         toast(error.message);
     }
 });
@@ -752,5 +892,591 @@ document.querySelectorAll('.backdrop').forEach((backdrop) => {
     });
 });
 
+/* ================================================================
+ * Sidebar tabs
+ * ================================================================ */
+
+function switchTab(tab) {
+    state.activeTab = tab;
+    document.querySelectorAll('.tab').forEach((button) => {
+        button.classList.toggle('active', button.dataset.tab === tab);
+    });
+    ['chats', 'friends', 'requests'].forEach((name) => {
+        $(`pane-${name}`).hidden = name !== tab;
+    });
+}
+
+document.querySelectorAll('.tab').forEach((button) => {
+    button.addEventListener('click', () => switchTab(button.dataset.tab));
+});
+
+/* ================================================================
+ * Notes (24-hour, friends only)
+ * ================================================================ */
+
+async function loadNotes() {
+    try {
+        const page = await api('/api/notes');
+        state.notes = page.data ?? [];
+        renderNotes();
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+function renderNotes() {
+    const box = $('notes-list');
+    const mine = state.notes.find((note) => note.is_mine);
+
+    const cards = [`<div class="note-card add" data-add="1" title="Add a note">
+        <span class="plus">＋</span><span>${mine ? 'Edit note' : 'Add note'}</span>
+    </div>`];
+
+    state.notes.filter((note) => ! note.is_mine).forEach((note) => {
+        cards.push(`<div class="note-card" data-note="${note.id}" title="${esc(note.user.name)}'s note">
+            <img class="avatar" src="${esc(note.user.avatar)}" alt="">
+            <span>${esc(note.content)}</span>
+        </div>`);
+    });
+
+    box.innerHTML = cards.join('');
+}
+
+function openNoteEditor(note = null) {
+    state.activeNote = note;
+    $('note-modal-title').textContent = note ? 'Edit your note' : 'Add a note';
+    $('note-content').value = note?.content ?? '';
+    $('note-content').readOnly = false;
+    $('note-save-btn').hidden = false;
+    $('note-delete-btn').hidden = ! note;
+    $('note-author').hidden = true;
+    $('note-modal').classList.add('show');
+    $('note-content').focus();
+}
+
+function openNoteViewer(note) {
+    state.activeNote = null;
+    $('note-modal-title').textContent = `${note.user.name}'s note`;
+    $('note-content').value = note.content;
+    $('note-content').readOnly = true;
+    $('note-delete-btn').hidden = true;
+    $('note-save-btn').hidden = true;
+    $('note-author').hidden = false;
+    $('note-author').innerHTML = `
+        <img class="avatar sm" src="${esc(note.user.avatar)}" alt="">
+        <span class="who">${esc(note.user.name)}<small>@${esc(note.user.username)} · ${esc(note.time ?? '')}</small></span>`;
+    $('note-modal').classList.add('show');
+}
+
+$('add-note-btn').addEventListener('click', () => {
+    openNoteEditor(state.notes.find((note) => note.is_mine) ?? null);
+});
+
+$('notes-list').addEventListener('click', (event) => {
+    const card = event.target.closest('.note-card');
+    if (! card) return;
+
+    if (card.dataset.add) {
+        openNoteEditor(state.notes.find((note) => note.is_mine) ?? null);
+        return;
+    }
+
+    const note = state.notes.find((n) => n.id === Number(card.dataset.note));
+    if (! note) return;
+    if (note.is_mine) {
+        openNoteEditor(note);
+    } else {
+        openNoteViewer(note);
+    }
+});
+
+$('note-modal').addEventListener('click', (event) => {
+    if (event.target === $('note-modal')) {
+        $('note-content').readOnly = false;
+        $('note-save-btn').hidden = false;
+    }
+});
+
+$('note-save-btn').addEventListener('click', async () => {
+    const content = $('note-content').value.trim();
+    if (! content) {
+        toast('Write something first.');
+        return;
+    }
+
+    try {
+        if (state.activeNote) {
+            await api(`/api/notes/${state.activeNote.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+        } else {
+            await api('/api/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+        }
+        $('note-modal').classList.remove('show');
+        $('note-content').readOnly = false;
+        $('note-save-btn').hidden = false;
+        toast('Note saved — it disappears after 24 hours.');
+        loadNotes();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+$('note-delete-btn').addEventListener('click', async () => {
+    if (! state.activeNote || ! confirm('Delete this note?')) return;
+    try {
+        await api(`/api/notes/${state.activeNote.id}`, { method: 'DELETE' });
+        $('note-modal').classList.remove('show');
+        toast('Note deleted.');
+        loadNotes();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+/* ================================================================
+ * Friends
+ * ================================================================ */
+
+async function loadFriends() {
+    try {
+        const data = await api('/api/friends');
+        state.friends = data.friends?.data ?? [];
+        $('friends-count').textContent = data.counts?.friends ?? '';
+        $('friend-incoming-count').textContent = data.counts?.incoming ?? '';
+
+        const list = $('friend-list');
+        list.innerHTML = state.friends.length ? state.friends.map((friend) => `
+            <li class="conv-item" data-friend="${friend.id}">
+                <img class="avatar" src="${esc(friend.avatar)}" alt="">
+                <div class="body">
+                    <div class="conv-row"><span class="conv-name">${esc(friend.name)}</span></div>
+                    <div class="conv-bottom">
+                        <span class="conv-preview">@${esc(friend.username)}${friend.status ? ' · ' + esc(friend.status) : ''}</span>
+                        <span class="action-row">
+                            <button class="mini-btn primary" data-message="${friend.id}" type="button">Chat</button>
+                            <button class="mini-btn danger" data-unfriend="${friend.id}" type="button">Remove</button>
+                        </span>
+                    </div>
+                </div>
+            </li>`).join('') : '<li class="empty-list">No friends yet. Find people below.</li>';
+
+        const incoming = data.incoming?.data ?? [];
+        $('friend-request-list').innerHTML = incoming.length ? incoming.map((item) => `
+            <li class="conv-item">
+                <img class="avatar" src="${esc(item.user.avatar)}" alt="">
+                <div class="body">
+                    <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span>
+                        <span class="conv-time">${esc(formatShortTime(item.created_at))}</span></div>
+                    <div class="conv-bottom"><span class="conv-preview">@${esc(item.user.username)}</span>
+                        <span class="action-row">
+                            <button class="mini-btn primary" data-accept-friend="${item.id}" type="button">Accept</button>
+                            <button class="mini-btn" data-reject-friend="${item.id}" type="button">Reject</button>
+                        </span>
+                    </div>
+                </div>
+            </li>`).join('') : '<li class="empty-list">No incoming requests.</li>';
+
+        const outgoing = data.outgoing?.data ?? [];
+        $('friend-sent-list').innerHTML = outgoing.length ? outgoing.map((item) => `
+            <li class="conv-item">
+                <img class="avatar" src="${esc(item.user.avatar)}" alt="">
+                <div class="body">
+                    <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span></div>
+                    <div class="conv-bottom"><span class="conv-preview">@${esc(item.user.username)} · Pending</span>
+                        <button class="mini-btn danger" data-cancel-friend="${item.id}" type="button">Cancel</button>
+                    </div>
+                </div>
+            </li>`).join('') : '<li class="empty-list">No sent requests.</li>';
+
+        state.friendRequests = { incoming, outgoing };
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+$('friend-list').addEventListener('click', async (event) => {
+    const messageButton = event.target.closest('[data-message]');
+    const removeButton = event.target.closest('[data-unfriend]');
+
+    if (messageButton) {
+        const friendId = Number(messageButton.dataset.message);
+        try {
+            const result = await api(`/api/conversations/direct/${friendId}`, { method: 'POST' });
+            await loadConversations();
+            switchTab('chats');
+            await openConversation(result.id);
+        } catch (error) {
+            toast(error.message);
+        }
+        return;
+    }
+
+    if (removeButton && confirm('Remove this friend?')) {
+        try {
+            await api(`/api/friends/user/${removeButton.dataset.unfriend}`, { method: 'DELETE' });
+            toast('Friend removed.');
+            loadFriends();
+            loadNotes();
+        } catch (error) {
+            toast(error.message);
+        }
+    }
+});
+
+$('friend-request-list').addEventListener('click', async (event) => {
+    const accept = event.target.closest('[data-accept-friend]');
+    const reject = event.target.closest('[data-reject-friend]');
+    if (! accept && ! reject) return;
+
+    const id = accept?.dataset.acceptFriend ?? reject?.dataset.rejectFriend;
+    const action = accept ? 'accept' : 'reject';
+    try {
+        await api(`/api/friends/${id}/${action}`, { method: 'POST' });
+        toast(accept ? 'Friend request accepted.' : 'Friend request rejected.');
+        loadFriends();
+        loadNotes();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+$('friend-sent-list').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-cancel-friend]');
+    if (! button) return;
+    try {
+        await api(`/api/friends/${button.dataset.cancelFriend}`, { method: 'DELETE' });
+        toast('Friend request cancelled.');
+        loadFriends();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+$('friend-search').addEventListener('input', debounce(async (event) => {
+    const query = event.target.value.trim();
+    try {
+        const users = await api(`/api/users?q=${encodeURIComponent(query)}`);
+        renderUserResults(users, $('friend-results'), async (user) => {
+            try {
+                const result = await api('/api/friends', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: user.id }),
+                });
+                $('friend-results').innerHTML = '';
+                $('friend-search').value = '';
+                toast(result.status === 'accepted' ? 'You are now friends.' : 'Friend request sent.');
+                loadFriends();
+            } catch (error) {
+                toast(error.message);
+            }
+        });
+    } catch (error) {
+        toast(error.message);
+    }
+}, 250));
+
+/* ================================================================
+ * Message requests
+ * ================================================================ */
+
+async function loadMessageRequests() {
+    try {
+        const data = await api('/api/message-requests');
+        state.messageRequests = data;
+        const total = data.counts?.incoming ?? 0;
+        $('message-request-count').textContent = total ? `${total} new` : '';
+        $('request-badge').hidden = ! total;
+        $('request-badge').textContent = total;
+
+        $('message-request-list').innerHTML = data.incoming?.data?.length ? data.incoming.data.map((item) => `
+            <li class="conv-item" data-request="${item.id}">
+                <img class="avatar" src="${esc(item.user.avatar)}" alt="">
+                <div class="body">
+                    <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span>
+                        <span class="conv-time">${esc(formatShortTime(item.created_at))}</span></div>
+                    <div class="conv-bottom"><span class="conv-preview">${esc(item.preview)}</span></div>
+                </div>
+            </li>`).join('') : '<li class="empty-list">No message requests.</li>';
+
+        $('message-sent-list').innerHTML = data.sent?.data?.length ? data.sent.data.map((item) => `
+            <li class="conv-item" data-request="${item.id}">
+                <img class="avatar" src="${esc(item.user.avatar)}" alt="">
+                <div class="body">
+                    <div class="conv-row"><span class="conv-name">${esc(item.user.name)}</span></div>
+                    <div class="conv-bottom"><span class="conv-preview">${esc(item.preview)}</span></div>
+                </div>
+            </li>`).join('') : '<li class="empty-list">No sent requests.</li>';
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+function openRequestComposer(user) {
+    state.currentRequest = { mode: 'new', user };
+    $('request-details').innerHTML = `
+        <div class="member-row">
+            <img class="avatar" src="${esc(user.avatar)}" alt="">
+            <span class="who">${esc(user.name)}<small>@${esc(user.username)}</small></span>
+        </div>
+        <p class="muted">You are not friends yet. Send a short message request — they can accept it to start a normal chat.</p>`;
+    $('request-messages').innerHTML = '';
+    $('request-body').hidden = false;
+    $('request-body').value = '';
+    $('request-send-btn').hidden = false;
+    $('request-accept-btn').hidden = true;
+    $('request-delete-btn').hidden = true;
+    $('request-cancel-btn').hidden = true;
+    $('request-modal').classList.add('show');
+    $('request-body').focus();
+}
+
+async function openRequestPreview(id) {
+    try {
+        const request = await api(`/api/message-requests/${id}`);
+        const outgoing = request.direction === 'sent';
+        state.currentRequest = { mode: 'view', id, incoming: ! outgoing };
+
+        $('request-details').innerHTML = `
+            <div class="member-row">
+                <img class="avatar" src="${esc(request.user.avatar)}" alt="">
+                <span class="who">${esc(request.user.name)}
+                    <small>@${esc(request.user.username)}${request.user.bio ? ' · ' + esc(request.user.bio) : ''}</small></span>
+            </div>
+            <p class="muted">${esc(formatShortTime(request.created_at))} · ${esc(request.status)}</p>`;
+        $('request-messages').innerHTML = (request.messages ?? []).map((message) => `
+            <div class="bubble">${esc(message.body || (message.attachments?.length ? '📎 Attachment' : ''))}</div>`).join('');
+        $('request-body').hidden = true;
+        $('request-send-btn').hidden = true;
+        $('request-accept-btn').hidden = outgoing;
+        $('request-delete-btn').hidden = outgoing;
+        $('request-cancel-btn').hidden = ! outgoing;
+        $('request-modal').classList.add('show');
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+['message-request-list', 'message-sent-list'].forEach((listId) => {
+    $(listId).addEventListener('click', (event) => {
+        const item = event.target.closest('[data-request]');
+        if (item) openRequestPreview(Number(item.dataset.request));
+    });
+});
+
+$('request-send-btn').addEventListener('click', async () => {
+    const body = $('request-body').value.trim();
+    if (! body || ! state.currentRequest?.user) {
+        toast('Write a short introduction first.');
+        return;
+    }
+    try {
+        await api('/api/message-requests', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: state.currentRequest.user.id, body }),
+        });
+        $('request-modal').classList.remove('show');
+        toast('Message request sent.');
+        switchTab('requests');
+        loadMessageRequests();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+$('request-accept-btn').addEventListener('click', async () => {
+    if (! state.currentRequest?.id) return;
+    try {
+        const result = await api(`/api/message-requests/${state.currentRequest.id}/accept`, { method: 'POST' });
+        $('request-modal').classList.remove('show');
+        toast('Request accepted — you are now friends.');
+        await Promise.all([loadConversations(), loadFriends(), loadNotes(), loadMessageRequests()]);
+        switchTab('chats');
+        await openConversation(result.conversation_id);
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+$('request-delete-btn').addEventListener('click', async () => {
+    if (! state.currentRequest?.id || ! confirm('Delete this message request?')) return;
+    try {
+        await api(`/api/message-requests/${state.currentRequest.id}/delete`, { method: 'POST' });
+        $('request-modal').classList.remove('show');
+        toast('Message request deleted.');
+        loadMessageRequests();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+$('request-cancel-btn').addEventListener('click', async () => {
+    if (! state.currentRequest?.id) return;
+    try {
+        await api(`/api/message-requests/${state.currentRequest.id}`, { method: 'DELETE' });
+        $('request-modal').classList.remove('show');
+        toast('Message request cancelled.');
+        loadMessageRequests();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+/* ================================================================
+ * Notifications
+ * ================================================================ */
+
+function notificationText(event) {
+    const data = event.data ?? {};
+    const name = data.name ?? 'Someone';
+    switch (event.type) {
+        case 'friend_request_received': return `${name} sent you a friend request`;
+        case 'friend_request_accepted': return `${name} accepted your friend request`;
+        case 'friend_request_rejected': return `${name} declined your friend request`;
+        case 'friend_request_cancelled': return `${name} cancelled their friend request`;
+        case 'message_request_received': return `${name} sent you a message request`;
+        case 'message_request_accepted': return `${name} accepted your message request`;
+        case 'message_request_deleted': return `${name} deleted your message request`;
+        case 'message_request_cancelled': return `${name} cancelled their message request`;
+        case 'note_posted': return `${name} posted a note`;
+        default: return 'New notification';
+    }
+}
+
+function updateNotificationBadge() {
+    const badge = $('notification-badge');
+    badge.hidden = state.notificationCount <= 0;
+    badge.textContent = state.notificationCount > 99 ? '99+' : String(state.notificationCount);
+}
+
+async function loadNotifications() {
+    try {
+        const data = await api('/api/notifications');
+        state.notificationCount = data.unread_count ?? 0;
+        updateNotificationBadge();
+        const notifications = data.data?.data ?? [];
+        $('notifications-list').innerHTML = notifications.length ? notifications.map((item) => {
+            const text = notificationText({ type: item.type, data: item.data });
+            return `<div class="member-row ${item.read_at ? '' : 'unread'}" data-notification="${item.id}">
+                <span class="who">${esc(text)}<small>${esc(formatShortTime(item.created_at))}</small></span>
+                ${item.read_at ? '' : '<button class="mini-btn" data-read-notification="' + item.id + '" type="button">Read</button>'}
+            </div>`;
+        }).join('') : '<li class="empty-list">No notifications yet.</li>';
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+$('notification-btn').addEventListener('click', () => {
+    $('notifications-modal').classList.add('show');
+    loadNotifications();
+});
+
+$('notifications-list').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-read-notification]');
+    if (! button) return;
+    try {
+        await api(`/api/notifications/${button.dataset.readNotification}/read`, { method: 'POST' });
+        loadNotifications();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+$('notifications-read-btn').addEventListener('click', async () => {
+    try {
+        await api('/api/notifications/read-all', { method: 'POST' });
+        loadNotifications();
+    } catch (error) {
+        toast(error.message);
+    }
+});
+
+/* ================================================================
+ * Emoji picker + file attachments + lightbox
+ * ================================================================ */
+
+const EMOJIS = ['😀','😂','🥰','😍','😎','🤔','😭','😡','👍','👎','👏','🙏','💪','❤️','🔥','✨','🎉','🚀','💯','👀','😴','🤝','☕','🍕','📎','📷','✅','❌','😊','🥳','🤗','💡','🌙','⭐','💬','🕶️'];
+
+$('emoji-picker').innerHTML = EMOJIS.map((emoji) => `<button type="button" data-emoji="${emoji}">${emoji}</button>`).join('');
+
+$('emoji-btn').addEventListener('click', (event) => {
+    event.stopPropagation();
+    $('emoji-picker').hidden = ! $('emoji-picker').hidden;
+});
+
+$('emoji-picker').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-emoji]');
+    if (! button) return;
+    const input = $('message-input');
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.value = input.value.slice(0, start) + button.dataset.emoji + input.value.slice(end);
+    input.focus();
+    input.setSelectionRange(start + button.dataset.emoji.length, start + button.dataset.emoji.length);
+});
+
+document.addEventListener('click', (event) => {
+    if (! event.target.closest('.composer-tools')) $('emoji-picker').hidden = true;
+});
+
+function renderAttachmentPreviews() {
+    const box = $('attachment-previews');
+    box.hidden = ! state.pendingAttachments.length;
+    box.innerHTML = state.pendingAttachments.map((file, index) => `
+        <span class="attach-chip">📎 <span>${esc(file.name)}</span>
+            <button type="button" data-remove-attachment="${index}" aria-label="Remove">✕</button>
+        </span>`).join('');
+}
+
+$('attachment-previews').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-attachment]');
+    if (! button) return;
+    state.pendingAttachments.splice(Number(button.dataset.removeAttachment), 1);
+    renderAttachmentPreviews();
+});
+
+$('attach-btn').addEventListener('click', () => $('attachment-input').click());
+
+$('attachment-input').addEventListener('change', (event) => {
+    const chosen = [...(event.target.files ?? [])];
+    const MAX = 20 * 1024 * 1024;
+
+    for (const file of chosen) {
+        if (file.size > MAX) {
+            toast(`${file.name} is larger than 20 MB.`);
+            continue;
+        }
+        if (state.pendingAttachments.length >= 5) {
+            toast('You can attach up to 5 files at once.');
+            break;
+        }
+        state.pendingAttachments.push(file);
+    }
+
+    event.target.value = '';
+    renderAttachmentPreviews();
+});
+
+$('messages').addEventListener('click', (event) => {
+    const image = event.target.closest('.msg-image');
+    if (! image) return;
+    $('lightbox-image').src = image.dataset.preview;
+    $('lightbox-download').href = image.dataset.download;
+    $('lightbox').classList.add('show');
+});
+
 /* ---------------- Go ---------------- */
 loadConversations();
+loadFriends();
+loadMessageRequests();
+loadNotes();
+loadNotifications();
