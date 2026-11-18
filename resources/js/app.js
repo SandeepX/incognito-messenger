@@ -625,9 +625,15 @@ $('group-form').addEventListener('submit', async (event) => {
         return;
     }
 
+    const avatar = $('group-avatar').files[0];
+    if (avatar && avatar.size > 10 * 1024 * 1024) {
+        toast('That picture is larger than 10 MB. Please choose a smaller image.');
+        return;
+    }
+
     const data = new FormData();
     data.set('name', $('group-name').value.trim());
-    if ($('group-avatar').files[0]) data.set('avatar', $('group-avatar').files[0]);
+    if (avatar) data.set('avatar', avatar);
     state.selectedMembers.forEach((id) => data.append('member_ids[]', id));
 
     try {

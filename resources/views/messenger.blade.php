@@ -89,7 +89,7 @@
             <label for="group-name">Group name</label>
             <input id="group-name" type="text" maxlength="80" required placeholder="e.g. Weekend trip">
 
-            <label for="group-avatar">Group avatar (optional)</label>
+            <label for="group-avatar">Group avatar (optional — JPEG, PNG, GIF or WebP, max 10 MB)</label>
             <input id="group-avatar" type="file" name="avatar" accept="image/jpeg,image/png,image/gif,image/webp">
 
             <label for="group-member-search">Add members</label>

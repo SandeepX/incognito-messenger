@@ -35,6 +35,9 @@ RUN apk add --no-cache bash linux-headers \
     # pcntl is required by Reverb (SIGINT/SIGTERM signal handling)
     && docker-php-ext-install pcntl
 
+# Allow real-world photos through PHP; Laravel validates the 10 MB cap.
+COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
+
 # Composer from the official image
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
