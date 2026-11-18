@@ -44,6 +44,44 @@ class ProfileTest extends TestCase
         ]);
     }
 
+    public function test_message_sound_and_active_status_settings_are_persisted(): void
+    {
+        $user = $this->userWithProfile('settings');
+
+        $this->assertDatabaseHas('user_profiles', [
+            'user_id' => $user->id,
+            'message_sounds' => 1,
+            'show_active_status' => 1,
+        ]);
+
+        $payload = [
+            'name' => $user->name,
+            'username' => 'settings',
+            'email' => $user->email,
+            'message_sounds' => '0',
+            'show_active_status' => '0',
+        ];
+
+        $this->actingAs($user)->put('/profile', $payload)->assertRedirect();
+
+        $this->assertDatabaseHas('user_profiles', [
+            'user_id' => $user->id,
+            'message_sounds' => 0,
+            'show_active_status' => 0,
+        ]);
+
+        $this->actingAs($user)->put('/profile', [
+            ...$payload,
+            'message_sounds' => '1',
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('user_profiles', [
+            'user_id' => $user->id,
+            'message_sounds' => 1,
+            'show_active_status' => 0,
+        ]);
+    }
+
     public function test_username_and_email_must_be_unique_but_own_values_are_allowed(): void
     {
         $user = $this->userWithProfile('alice');

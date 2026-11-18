@@ -29,6 +29,8 @@ class ProfileUpdateRequest extends FormRequest
             ],
             'bio' => ['nullable', 'string', 'max:500'],
             'status' => ['nullable', 'string', 'max:120'],
+            'message_sounds' => ['boolean'],
+            'show_active_status' => ['boolean'],
         ];
     }
 

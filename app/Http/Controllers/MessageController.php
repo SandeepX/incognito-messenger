@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\ConversationsUpdated;
 use App\Events\MessageSent;
+use App\Events\MessageUnsent;
 use App\Events\UnreadCountsUpdated;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -100,6 +102,80 @@ class MessageController extends Controller
         }
 
         return response()->json($message->payload(), 201);
+    }
+
+    /**
+     * Unsend is sender-only. The server decides at request time whether the
+     * message was already seen: unseen messages become a shared placeholder,
+     * seen messages are hidden only from the sender's own view.
+     */
+    public function unsend(Message $message): JsonResponse
+    {
+        $me = auth()->id();
+
+        [$message, $mode, $hiddenFor] = DB::transaction(function () use ($message, $me) {
+            $locked = Message::whereKey($message->id)->lockForUpdate()->firstOrFail();
+
+            $this->authorize('view', $locked->conversation);
+            abort_unless($locked->sender_id === $me, 403, 'Only the sender can unsend a message.');
+
+            // Idempotent: repeated clicks (or a retried request) are harmless.
+            if ($locked->is_unsent) {
+                return [$locked, 'everyone', []];
+            }
+            if ($locked->isDeletedFor($me)) {
+                return [$locked, 'local', [$me]];
+            }
+
+            $seen = $locked->reads()
+                ->where('user_id', '!=', $locked->sender_id)
+                ->exists();
+
+            if ($seen) {
+                $deletedFor = array_map('intval', $locked->deleted_for ?? []);
+                $deletedFor[] = $me;
+
+                $locked->deleted_for = array_values(array_unique($deletedFor));
+                $locked->save();
+
+                return [$locked, 'local', [$me]];
+            }
+
+            // Private media is removed from MinIO, never from the local disk.
+            $paths = $locked->attachments()->pluck('storage_path')->all();
+            if ($paths !== []) {
+                Storage::disk('minio')->delete($paths);
+            }
+            $locked->attachments()->delete();
+
+            $locked->forceFill([
+                'body' => '',
+                'is_unsent' => true,
+                'unsent_at' => now(),
+                'unsent_by' => $me,
+            ])->save();
+
+            return [$locked, 'everyone', []];
+        });
+
+        $message->load(['sender.profile', 'reads.user.profile']);
+        $event = new MessageUnsent($message, $mode, $hiddenFor);
+        broadcast($event);
+
+        // Unsend can change badge counts and the sidebar preview for everyone.
+        $conversation = $message->conversation;
+        $recipientIds = $conversation->type === 'group'
+            ? $conversation->group->members()->pluck('users.id')
+            : $conversation->participants()->pluck('users.id');
+
+        foreach ($recipientIds as $userId) {
+            $id = (int) $userId;
+            broadcast(new UnreadCountsUpdated($id, UnreadCounter::for($id)));
+            // Refreshes the sidebar even for participants not in the chat.
+            broadcast(new ConversationsUpdated($id));
+        }
+
+        return response()->json($event->broadcastWith());
     }
 
     /**

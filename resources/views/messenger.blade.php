@@ -8,6 +8,8 @@
     <meta name="user-name" content="{{ $me->name }}">
     <meta name="user-username" content="{{ $me->username }}">
     <meta name="user-avatar" content="{{ $me->avatarUrl() }}">
+    <meta name="user-message-sounds" content="{{ $me->messageSoundsEnabled() ? '1' : '0' }}">
+    <meta name="user-show-active-status" content="{{ $me->showActiveStatus() ? '1' : '0' }}">
     <title>Incognito Messenger</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
@@ -118,7 +120,11 @@
 
                 <div class="composer-row">
                     <textarea id="message-input" rows="1" placeholder="Write a message…" autocomplete="off"></textarea>
-                    <button id="send-btn" class="send-btn" type="submit">Send</button>
+                    <button id="send-btn" class="send-btn" type="submit" aria-label="Send message" title="Send message" disabled>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                <path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12 2-12 2z"/>
+            </svg>
+        </button>
                 </div>
             </form>
             <div class="composer-hint">Enter to send · Shift + Enter for a new line · Files up to 20 MB</div>

@@ -27,7 +27,17 @@ class ProfileController extends Controller
         $user->save();
 
         $profile = $user->profile ?: new UserProfile(['user_id' => $user->id]);
-        $profile->fill($request->only('username', 'bio', 'status'));
+        $profile->fill($request->only(
+            'username',
+            'bio',
+            'status',
+            'message_sounds',
+            'show_active_status',
+        ));
+
+        // Both checkboxes post a hidden 0, so an unchecked box is explicit.
+        $profile->message_sounds = $request->boolean('message_sounds', true);
+        $profile->show_active_status = $request->boolean('show_active_status', true);
         $profile->save();
 
         return back()->with('status', 'Profile updated.');

@@ -18,6 +18,11 @@ class UnreadCounter
             ->join('conversation_participants as cp', 'cp.conversation_id', '=', 'messages.conversation_id')
             ->where('cp.user_id', $userId)
             ->where('messages.sender_id', '!=', $userId)
+            ->where('messages.is_unsent', false)
+            ->where(function ($query) use ($userId) {
+                $query->whereNull('messages.deleted_for')
+                    ->orWhereJsonDoesntContain('messages.deleted_for', $userId);
+            })
             ->whereNotExists(function ($query) use ($userId) {
                 $query->select(DB::raw(1))
                     ->from('message_reads')

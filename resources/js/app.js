@@ -13,6 +13,10 @@ import './echo';
 const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.content;
 const $ = (id) => document.getElementById(id);
 const csrf = () => meta('csrf-token');
+const flag = (name, fallback = true) => {
+    const value = meta(name);
+    return value == null ? fallback : value === '1' || value === 'true';
+};
 
 const state = {
     me: {
@@ -22,6 +26,11 @@ const state = {
         avatar: meta('user-avatar'),
     },
     online: new Map(),
+    presence: new Map(),
+    settings: {
+        messageSounds: flag('user-message-sounds'),
+        showActiveStatus: flag('user-show-active-status'),
+    },
     conversations: [],
     active: null,          // {id, type, group_id, peer_id, name, ...}
     activeChannel: null,
@@ -103,8 +112,116 @@ function formatShortTime(value) {
     return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
 }
 
+function relativeActive(value, now = Date.now()) {
+    if (! value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+
+    const seconds = Math.max(0, Math.floor((now - date.getTime()) / 1000));
+    if (seconds < 60) return 'Active now';
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `Active ${minutes} min ago`;
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Active ${hours} ${hours === 1 ? 'hr' : 'hrs'} ago`;
+
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `Active ${days} ${days === 1 ? 'day' : 'days'} ago`;
+
+    // Never-seen and older-than-a-week users show no status at all.
+    return '';
+}
+
+/** Presence is hidden entirely when the other person disabled the setting. */
 function isOnline(userId) {
-    return state.online.has(Number(userId));
+    return presenceInfo(userId).online;
+}
+
+function presenceInfo(userId) {
+    const id = Number(userId);
+    if (! id) return { online: false, label: '', dot: '' };
+
+    const member = state.online.get(id);
+    const record = state.presence.get(id);
+    const hidden = member?.show_active_status === false || record?.show_active_status === false;
+    if (hidden) return { online: false, label: '', dot: '' };
+
+    const online = state.online.has(id);
+    const lastActiveAt = record?.last_active_at ?? member?.last_active_at ?? null;
+    const label = online ? 'Active now' : relativeActive(lastActiveAt);
+    const dot = label ? `<span class="status-dot ${online ? 'online' : 'recent'}"></span>` : '';
+
+    return { online, label, dot };
+}
+
+function updatePresenceUI() {
+    renderConversationList();
+    updateChatHeader();
+    document.querySelectorAll('[data-presence-for]').forEach((element) => {
+        element.textContent = presenceInfo(element.dataset.presenceFor).label;
+    });
+}
+
+/* ---------------- small notification sounds ---------------- */
+
+const sounds = {};
+try {
+    for (const [kind, path] of Object.entries({
+        received: '/sounds/received.wav',
+        sent: '/sounds/sent.wav',
+    })) {
+        sounds[kind] = new Audio(path);
+        sounds[kind].preload = 'auto';
+    }
+} catch { /* audio is a nice-to-have, never a hard failure */ }
+
+function playSound(kind) {
+    if (! state.settings.messageSounds) return;
+    const sound = sounds[kind];
+    if (! sound) return;
+
+    try {
+        sound.currentTime = 0;
+        const promise = sound.play();
+        if (promise?.catch) promise.catch(() => {});
+    } catch { /* autoplay blocked or unsupported — stay silent */ }
+}
+
+function unlockAudio() {
+    Object.values(sounds).forEach((sound) => {
+        try {
+            const volume = sound.volume;
+            sound.volume = 0;
+            const promise = sound.play();
+            if (promise?.catch) promise.catch(() => {});
+            sound.pause();
+            sound.currentTime = 0;
+            sound.volume = volume;
+        } catch { /* ignore */ }
+    });
+}
+
+['pointerdown', 'keydown', 'touchstart'].forEach((eventName) => {
+    document.addEventListener(eventName, function unlockOnce() {
+        unlockAudio();
+        ['pointerdown', 'keydown', 'touchstart'].forEach((other) => {
+            document.removeEventListener(other, unlockOnce, true);
+        });
+    }, { capture: true, once: true });
+});
+
+function shouldPlayReceivedSound(message) {
+    if (! state.settings.messageSounds) return false;
+    if (message.sender_id === state.me.id || message.is_unsent) return false;
+
+    // Reading an incoming message in the focused, active chat is not a
+    // notification. Background tabs and other conversations still ping.
+    const activeChatFocused = state.active?.id === message.conversation_id
+        && document.visibilityState === 'visible'
+        && document.hasFocus();
+
+    return ! activeChatFocused;
 }
 
 /** Consistent avatar + small cloud marker for users with an active note. */
@@ -179,22 +296,61 @@ function scrollToLatestRow(smooth = false) {
  * Presence + per-user notifications
  * ================================================================ */
 
+async function heartbeat() {
+    try {
+        await api('/api/presence/heartbeat', { method: 'POST' });
+    } catch { /* transient presence failures are invisible to the user */ }
+}
+
+async function loadPresence() {
+    try {
+        const users = await api('/api/presence');
+        users.forEach((user) => state.presence.set(Number(user.id), user));
+        updatePresenceUI();
+    } catch { /* keep the last known relative times */ }
+}
+
 window.Echo.join('online')
     .here((users) => {
         state.online = new Map(users.map((u) => [Number(u.id), u]));
-        renderConversationList();
-        updateChatHeader();
+        // Joining the presence channel is a real socket connect: persist it.
+        heartbeat();
+        updatePresenceUI();
     })
     .joining((user) => {
         state.online.set(Number(user.id), user);
-        renderConversationList();
-        updateChatHeader();
+        updatePresenceUI();
     })
     .leaving((user) => {
         state.online.delete(Number(user.id));
-        renderConversationList();
-        updateChatHeader();
+        updatePresenceUI();
     });
+
+window.Echo.connector.pusher.connection.bind('connected', () => heartbeat());
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        heartbeat();
+        loadPresence();
+    }
+});
+
+window.addEventListener('pagehide', () => disconnectPresence());
+
+function disconnectPresence() {
+    if (! navigator.sendBeacon) return;
+    try {
+        navigator.sendBeacon(
+            '/api/presence/disconnect',
+            new URLSearchParams({ _token: csrf() }),
+        );
+    } catch { /* best-effort only; the timestamp naturally expires */ }
+}
+
+setInterval(() => {
+    heartbeat();
+    loadPresence();
+}, 30000);
 
 window.Echo.private(`user.${state.me.id}`)
     .listen('.UnreadCountsUpdated', (event) => {
@@ -202,6 +358,19 @@ window.Echo.private(`user.${state.me.id}`)
     })
     .listen('.ConversationsUpdated', () => {
         loadConversations();
+    })
+    .listen('.PresenceUpdated', (event) => {
+        if (! event.user) return;
+        const id = Number(event.user.id);
+        state.presence.set(id, event.user);
+
+        if (event.online) {
+            state.online.set(id, event.user);
+        } else {
+            state.online.delete(id);
+        }
+
+        updatePresenceUI();
     })
     .listen('.NotificationCreated', (event) => {
         state.notificationCount = event.unread_count ?? state.notificationCount + 1;
@@ -258,18 +427,19 @@ function renderConversationList() {
 
     list.innerHTML = state.conversations.map((c) => {
         const last = c.last_message;
-        const preview = last
-            ? `${last.sender_id === state.me.id ? 'You: ' : ''}${last.body || (last.attachments?.length ? `📎 ${last.attachments[0].original_filename}` : '')}`
-            : 'No messages yet';
-        const dot = c.type === 'direct' && isOnline(c.peer_id)
-            ? '<span class="status-dot online"></span>' : '';
+        const preview = ! last
+            ? 'No messages yet'
+            : last.is_unsent
+                ? (last.preview || 'Message unsent')
+                : `${last.sender_id === state.me.id ? 'You: ' : ''}${last.body || (last.attachments?.length ? `📎 ${last.attachments[0].original_filename}` : '')}`;
+        const presence = c.type === 'direct' ? presenceInfo(c.peer_id) : { label: '', dot: '' };
 
         return `
             <li class="conv-item ${state.active?.id === c.id ? 'active' : ''}" data-id="${c.id}">
                 ${avatarWithNote(c.avatar, c.has_note)}
                 <div class="body">
                     <div class="conv-row">
-                        <span class="conv-name">${dot}${esc(c.name)}</span>
+                        <span class="conv-name">${presence.dot}${esc(c.name)}${presence.label ? `<span class="conv-presence">${esc(presence.label)}</span>` : ''}</span>
                         <span class="conv-time">${esc(formatShortTime(c.last_at))}</span>
                     </div>
                     <div class="conv-bottom">
@@ -358,10 +528,10 @@ function updateChatHeader() {
     if (! state.active) return;
 
     $('chat-name').textContent = state.active.name ?? 'Conversation';
-    const online = state.active.type === 'direct' && isOnline(state.active.peer_id);
+    const presence = state.active.type === 'direct' ? presenceInfo(state.active.peer_id) : null;
     $('chat-subtitle').innerHTML = state.active.type === 'group'
         ? esc(state.active.subtitle ?? 'Group conversation')
-        : `<span class="status-dot ${online ? 'online' : ''}"></span>${online ? 'Online' : 'Offline'}`;
+        : `<span class="status-dot ${presence.online ? 'online' : ''}"></span>${esc(presence.label || 'Offline')}`;
     $('chat-avatar').src = state.active.avatar ?? '/images/default-avatar.svg';
     $('chat-note-orb').hidden = state.active.type !== 'direct' || ! state.active.has_note;
     $('group-info-btn').hidden = state.active.type !== 'group';
@@ -398,20 +568,48 @@ function statusHtml(message) {
     return `<div class="status-line" data-status-for="${message.id}">${label}</div>`;
 }
 
+function unsentPreview(message) {
+    if (Number(message.unsent_by) === state.me.id) return 'You unsent a message';
+    return message.preview || `${message.sender_name ?? 'Someone'} unsent a message`;
+}
+
 function buildMessageRow(message) {
     const mine = message.sender_id === state.me.id;
+    const unsent = message.is_unsent === true;
     const row = document.createElement('div');
     row.className = `msg-row ${mine ? 'mine' : 'theirs'}`;
     row.dataset.id = message.id ?? '';
     row.innerHTML = `
         <img class="avatar sm" src="${esc(message.sender_avatar)}" alt="">
         <div>
-            ${message.body ? `<div class="bubble">${esc(message.body)}</div>` : ''}
-            ${attachmentHtml(message)}
+            ${unsent
+                ? `<div class="unsent-bubble">${esc(unsentPreview(message))}</div>`
+                : `${message.body ? `<div class="bubble">${esc(message.body)}</div>` : ''}${attachmentHtml(message)}`}
             <span class="msg-meta">${esc(message.sender_name)} · ${esc(message.time ?? formatTime(message.created_at))}</span>
-            ${statusHtml(message)}
-        </div>`;
+            ${unsent ? '' : statusHtml(message)}
+        </div>
+        ${mine && ! unsent ? `<span class="msg-actions"><button class="msg-menu-btn" type="button" data-unsend-id="${message.id}" aria-label="Unsend message" title="Unsend message">⋯</button></span>` : ''}`;
     return row;
+}
+
+/** Apply the server's unsend decision; safe to call from HTTP and socket. */
+function applyUnsent(event) {
+    const id = Number(event.id ?? event.message_id);
+    if (! id) return;
+
+    const hiddenFor = (event.hidden_for ?? []).map(Number);
+    const row = document.querySelector(`.msg-row[data-id="${id}"]`);
+
+    if (hiddenFor.includes(state.me.id)) {
+        row?.remove();
+    } else if (event.mode === 'everyone' && event.message) {
+        const replacement = buildMessageRow(event.message);
+        if (row) row.replaceWith(replacement);
+    }
+
+    // Both the placeholder text and the sorted last message can change.
+    clearTimeout(applyUnsent.reloadTimer);
+    applyUnsent.reloadTimer = setTimeout(loadConversations, 80);
 }
 
 function appendMessage(message, scroll = true) {
@@ -526,6 +724,7 @@ async function openConversation(id) {
     $('messages').innerHTML = '';
     $('jump-latest').hidden = true;
     $('message-input').value = '';
+    updateSendButton();
     hideTyping();
     updateChatHeader();
     renderConversationList();
@@ -560,6 +759,7 @@ async function openConversation(id) {
 
     window.Echo.private(channel)
         .listen('.MessageSent', (message) => {
+            if (shouldPlayReceivedSound(message)) playSound('received');
             if (state.active?.id !== message.conversation_id) return;
 
             const wasAtBottom = isNearBottom();
@@ -623,6 +823,10 @@ async function openConversation(id) {
                 }
             }
         })
+        .listen('.MessageUnsent', (event) => {
+            // No sound: an unsent placeholder is not a new message.
+            applyUnsent(event);
+        })
         .listenForWhisper('typing', (event) => {
             if (state.active?.id !== id || event.from === state.me.id) return;
             showTyping();
@@ -660,6 +864,12 @@ async function openConversation(id) {
 /* ================================================================
  * Composing + typing whispers
  * ================================================================ */
+
+function updateSendButton() {
+    const input = $('message-input');
+    const hasContent = Boolean(input?.value.trim()) || state.pendingAttachments.length > 0;
+    $('send-btn').disabled = ! state.active || ! hasContent;
+}
 
 /** XHR gives us real upload progress; fetch does not. */
 function uploadMessage(formData) {
@@ -718,6 +928,8 @@ $('composer').addEventListener('submit', async (event) => {
         // Our own bubble arrives back over the WebSocket, just like everyone
         // else's — one render path for both sides.
         await uploadMessage(data);
+        playSound('sent');
+        updateSendButton();
     } catch (error) {
         if (body) input.value = body;
         state.pendingAttachments = files;
@@ -735,6 +947,7 @@ $('message-input').addEventListener('keydown', (event) => {
 
 $('message-input').addEventListener('input', (event) => {
     const wasAtBottom = isNearBottom();
+    updateSendButton();
 
     event.target.style.height = 'auto';
     event.target.style.height = `${Math.min(event.target.scrollHeight, 140)}px`;
@@ -1124,6 +1337,11 @@ async function loadFriends() {
     try {
         const data = await api('/api/friends');
         state.friends = data.friends?.data ?? [];
+        state.friends.forEach((friend) => {
+            if ('last_active_at' in friend || 'show_active_status' in friend) {
+                state.presence.set(friend.id, { id: friend.id, ...friend });
+            }
+        });
         const incomingCount = data.counts?.incoming ?? 0;
         $('friends-count').textContent = data.counts?.friends ?? '';
         $('friend-incoming-count').textContent = incomingCount;
@@ -1135,7 +1353,7 @@ async function loadFriends() {
             <li class="conv-item" data-friend="${friend.id}">
                 ${avatarWithNote(friend.avatar, friend.has_note)}
                 <div class="body">
-                    <div class="conv-row"><span class="conv-name">${esc(friend.name)}</span></div>
+                    <div class="conv-row"><span class="conv-name">${esc(friend.name)}</span><span class="conv-presence" data-presence-for="${friend.id}">${esc(presenceInfo(friend.id).label)}</span></div>
                     <div class="conv-bottom">
                         <span class="conv-preview">@${esc(friend.username)}${friend.status ? ' · ' + esc(friend.status) : ''}</span>
                         <span class="action-row">
@@ -1515,6 +1733,7 @@ document.addEventListener('click', (event) => {
 function renderAttachmentPreviews() {
     const box = $('attachment-previews');
     box.hidden = ! state.pendingAttachments.length;
+    updateSendButton();
     box.innerHTML = state.pendingAttachments.map((file, index) => `
         <span class="attach-chip">📎 <span>${esc(file.name)}</span>
             <button type="button" data-remove-attachment="${index}" aria-label="Remove">✕</button>
@@ -1550,7 +1769,27 @@ $('attachment-input').addEventListener('change', (event) => {
     renderAttachmentPreviews();
 });
 
-$('messages').addEventListener('click', (event) => {
+$('messages').addEventListener('click', async (event) => {
+    const unsendButton = event.target.closest('[data-unsend-id]');
+    if (unsendButton) {
+        const id = Number(unsendButton.dataset.unsendId);
+        const confirmed = window.confirm(
+            'Unsend this message? If it has already been seen, it will only be removed from your view.',
+        );
+        if (! confirmed) return;
+
+        unsendButton.disabled = true;
+        try {
+            const result = await api(`/api/messages/${id}/unsend`, { method: 'POST' });
+            applyUnsent(result);
+            toast('Message unsent.');
+        } catch (error) {
+            unsendButton.disabled = false;
+            toast(error.message);
+        }
+        return;
+    }
+
     const image = event.target.closest('.msg-image');
     if (! image) return;
     $('lightbox-image').src = image.dataset.preview;
@@ -1559,6 +1798,8 @@ $('messages').addEventListener('click', (event) => {
 });
 
 /* ---------------- Go ---------------- */
+updateSendButton();
+loadPresence();
 loadConversations();
 loadFriends();
 loadMessageRequests();

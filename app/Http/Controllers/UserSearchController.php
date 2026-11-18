@@ -44,6 +44,7 @@ class UserSearchController extends Controller
             'is_friend' => isset($friendIds[$user->id]),
             'has_note' => $user->activeNote !== null,
             'conversation_id' => $conversationIds[Conversation::directKey($me, $user->id)] ?? null,
+            ...$user->presencePayload(),
         ]));
     }
 }

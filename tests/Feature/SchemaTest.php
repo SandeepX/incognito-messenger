@@ -13,13 +13,13 @@ class SchemaTest extends TestCase
     public function test_all_messenger_tables_exist_with_expected_columns(): void
     {
         $expected = [
-            'users' => ['name', 'email', 'password'],
-            'user_profiles' => ['user_id', 'username', 'avatar_path', 'status', 'bio'],
+            'users' => ['name', 'email', 'password', 'last_active_at'],
+            'user_profiles' => ['user_id', 'username', 'avatar_path', 'status', 'bio', 'show_active_status', 'message_sounds'],
             'groups' => ['name', 'avatar_path', 'description', 'creator_id'],
             'conversations' => ['type', 'group_id', 'direct_key'],
             'conversation_participants' => ['conversation_id', 'user_id', 'last_read_at'],
             'group_members' => ['group_id', 'user_id', 'role'],
-            'messages' => ['conversation_id', 'sender_id', 'body'],
+            'messages' => ['conversation_id', 'sender_id', 'body', 'is_unsent', 'unsent_at', 'unsent_by', 'deleted_for'],
             'message_reads' => ['message_id', 'user_id', 'read_at'],
             'friendships' => ['user_id', 'friend_id', 'pair_key'],
             'friend_requests' => ['sender_id', 'recipient_id', 'pair_key', 'status'],

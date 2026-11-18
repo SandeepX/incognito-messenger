@@ -25,6 +25,7 @@
         input:focus, textarea:focus { border-color: #0ea5e9; }
         textarea { resize: vertical; min-height: 76px; }
         .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #cbd5e1; }
+        .hint { display: block; margin-top: 4px; font-size: 11.5px; color: #64748b; }
         button.primary { width: 100%; margin-top: 20px; padding: 12px; border: 0; border-radius: 10px;
             background: #0ea5e9; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
         button.primary:hover { background: #38bdf8; }
