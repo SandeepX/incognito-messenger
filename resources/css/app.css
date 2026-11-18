@@ -315,6 +315,42 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
 .unread-badge:empty { display: none; }
 .badge { background: var(--accent); color: #fff; border-radius: var(--r-pill); min-width: 18px; height: 18px; padding: 0 5px; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .badge:empty { display: none; }
+
+/* Messenger-style notification bell badge */
+.notification-btn { position: relative; overflow: visible; }
+.notification-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    z-index: 2;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border: 2px solid var(--surface);
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+.notification-badge[hidden] { display: none !important; }
+html[data-theme="light"] .notification-badge { background: #dc2626; border-color: var(--surface); }
+.notification-row { cursor: pointer; border-radius: var(--r-8); transition: background .15s ease; }
+.notification-row:hover, .notification-row:focus-visible { background: var(--surface-3); outline: none; }
+.notification-row.unread .who strong, .notification-row.unread .who { color: var(--text); }
+.notification-dot {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    margin-left: auto;
+    border-radius: 50%;
+    background: var(--accent);
+}
 .empty-list { color: var(--muted); font-size: 13px; text-align: center; padding: var(--sp-24) var(--sp-16); line-height: 1.5; list-style: none; }
 
 .list-pane { display: flex; flex-direction: column; }
@@ -500,6 +536,7 @@ html[data-theme="light"] .status-ticks.seen { color: #e0f2fe; }
 .msg-menu-btn { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; opacity: 0; transition: opacity .15s ease, background .15s ease, color .15s ease; }
 .msg-row:hover .msg-menu-btn, .msg-menu-btn:focus-visible { opacity: 1; }
 .msg-menu-btn:hover { background: var(--surface-3); color: var(--text); }
+@media (hover: none) { .msg-menu-btn { opacity: .6; } }
 
 /* typing indicator bubble */
 .typing-row { display: flex; align-items: flex-end; gap: var(--sp-8); align-self: flex-start; max-width: 65%; }
@@ -815,6 +852,66 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
 .sidebar-scroll.slim-scroll::-webkit-scrollbar { width: 6px; }
 .sidebar-scroll.slim-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
 .sidebar-scroll.slim-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- delete message dialog ---------- */
+.delete-backdrop { z-index: 70; }
+.delete-dialog {
+    width: min(400px, 100%);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-16);
+    box-shadow: var(--shadow);
+    padding: 20px;
+}
+.delete-dialog h2 { margin: 0 0 14px; font-size: 17px; text-align: center; }
+.delete-options { display: flex; flex-direction: column; gap: 8px; }
+.delete-option {
+    width: 100%;
+    min-height: 52px;
+    padding: 12px 14px;
+    text-align: left;
+    border: 1px solid var(--line);
+    border-radius: var(--r-12);
+    background: var(--surface-2);
+    color: var(--text);
+    transition: border-color .15s ease, background .15s ease, opacity .15s ease;
+}
+.delete-option:hover:not(:disabled) { border-color: var(--accent); background: var(--surface-3); }
+.delete-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.delete-option:disabled { opacity: .5; cursor: not-allowed; }
+.delete-option-title { display: block; font-size: 14px; font-weight: 700; }
+.delete-option.danger .delete-option-title { color: var(--danger); }
+.delete-option.danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); }
+.delete-option-help { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.delete-cancel {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 4px;
+    border: 1px solid transparent;
+    border-radius: var(--r-12);
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    transition: background .15s ease, border-color .15s ease;
+}
+.delete-cancel:hover { background: var(--surface-3); border-color: var(--line); }
+.delete-cancel:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.delete-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; text-align: center; }
+.delete-note[hidden] { display: none !important; }
+.delete-error { min-height: 16px; margin: 8px 0 0; color: var(--danger); font-size: 12px; line-height: 1.4; text-align: center; }
+.delete-error:empty { min-height: 0; margin: 0; }
+
+@media (max-width: 560px) {
+    .delete-backdrop { align-items: flex-end; padding: 0; }
+    .delete-dialog {
+        width: 100%;
+        max-height: 92dvh;
+        overflow-y: auto;
+        border-radius: 18px 18px 0 0;
+        padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    }
+}
 
 .lightbox { flex-direction: column; gap: 12px; background: rgba(3,8,16,.94); padding: 30px; }
 .lightbox img { max-width: min(92vw, 1100px); max-height: 82vh; border-radius: 10px; }

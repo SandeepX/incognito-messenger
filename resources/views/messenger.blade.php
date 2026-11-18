@@ -44,9 +44,9 @@
             <div class="brand-bar">
                 <span class="brand-icon" aria-hidden="true">🕶️</span>
                 <div class="brand-copy"><strong>Incognito Messenger</strong><small>Private by design</small></div>
-                <button id="notification-btn" class="icon-btn" type="button" title="Notifications" aria-label="Notifications">
+                <button id="notification-btn" class="icon-btn notification-btn" type="button" title="Notifications" aria-label="Notifications">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 7h18s-3 0-3-7M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                    <span id="notification-badge" class="badge" hidden></span>
+                    <span id="notification-badge" class="badge notification-badge" aria-live="polite" hidden></span>
                 </button>
             </div>
 
@@ -353,6 +353,27 @@
         <div class="modal-actions">
             <button id="notifications-read-btn" class="btn primary" type="button">Mark all as read</button>
         </div>
+    </div>
+</div>
+
+<!-- Delete message confirmation -->
+<div id="delete-message-modal" class="backdrop delete-backdrop" aria-hidden="true">
+    <div class="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-desc">
+        <h2 id="delete-dialog-title">Delete message?</h2>
+        <p id="delete-dialog-desc" class="sr-only">Choose who this message should be deleted for.</p>
+        <div class="delete-options">
+            <button id="delete-everyone-btn" class="delete-option danger" type="button">
+                <span class="delete-option-title">Delete for everyone</span>
+                <span class="delete-option-help">This message will be unsent for everyone in the chat.</span>
+            </button>
+            <button id="delete-for-me-btn" class="delete-option" type="button">
+                <span class="delete-option-title">Delete for you</span>
+                <span class="delete-option-help">This removes the message from your devices only. Others can still see it.</span>
+            </button>
+            <button id="delete-cancel-btn" class="delete-cancel" type="button">Cancel</button>
+        </div>
+        <p id="delete-seen-note" class="delete-note" hidden>Seen messages can only be deleted for you.</p>
+        <p id="delete-error" class="delete-error" role="alert"></p>
     </div>
 </div>
 

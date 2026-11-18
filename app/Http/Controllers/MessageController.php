@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\ConversationsUpdated;
+use App\Events\MessageSeen;
 use App\Events\MessageSent;
 use App\Events\MessageUnsent;
 use App\Events\UnreadCountsUpdated;
@@ -105,77 +106,168 @@ class MessageController extends Controller
     }
 
     /**
-     * Unsend is sender-only. The server decides at request time whether the
-     * message was already seen: unseen messages become a shared placeholder,
-     * seen messages are hidden only from the sender's own view.
+     * Delete a message either for everyone (sender-only, unseen-only) or
+     * just for the caller. The server always makes the decision: it locks
+     * the row and reads the current message_reads state inside the same
+     * transaction, so a delete request racing a seen receipt cannot remove
+     * a message the recipient has already read.
      */
-    public function unsend(Message $message): JsonResponse
+    public function unsend(Message $message, Request $request): JsonResponse
     {
-        $me = auth()->id();
+        $me = (int) auth()->id();
+        $mode = (string) $request->input('mode', '');
+        abort_unless(
+            in_array($mode, ['everyone', 'me'], true),
+            422,
+            'Choose whether to delete for everyone or only for yourself.'
+        );
 
-        [$message, $mode, $hiddenFor] = DB::transaction(function () use ($message, $me) {
+        $paths = [];
+        [$message, $changed] = DB::transaction(function () use ($message, $me, $mode, &$paths) {
             $locked = Message::whereKey($message->id)->lockForUpdate()->firstOrFail();
 
             $this->authorize('view', $locked->conversation);
-            abort_unless($locked->sender_id === $me, 403, 'Only the sender can unsend a message.');
 
-            // Idempotent: repeated clicks (or a retried request) are harmless.
-            if ($locked->is_unsent) {
-                return [$locked, 'everyone', []];
+            if ($mode === 'everyone') {
+                abort_unless(
+                    (int) $locked->sender_id === $me,
+                    403,
+                    'Only the sender can delete a message for everyone.'
+                );
+
+                // Idempotent: a retried request is harmless, but do not send
+                // another broadcast for an already-unsent message.
+                if ($locked->is_unsent) {
+                    return [$locked, false];
+                }
+
+                $seen = $locked->reads()
+                    ->where('user_id', '!=', $locked->sender_id)
+                    ->exists();
+
+                abort_if(
+                    $seen,
+                    422,
+                    'Seen messages can only be deleted for you.'
+                );
+
+                // Collect private media here; remove it from MinIO only after
+                // the database transaction commits.
+                $paths = $locked->attachments()->pluck('storage_path')->all();
+                $locked->attachments()->delete();
+
+                $locked->forceFill([
+                    'body' => '',
+                    'is_unsent' => true,
+                    'unsent_at' => now(),
+                    'unsent_by' => $me,
+                ])->save();
+
+                return [$locked, true];
             }
-            if ($locked->isDeletedFor($me)) {
-                return [$locked, 'local', [$me]];
+
+            // Delete for me: either participant may hide any message from
+            // their own history. This never touches the shared message.
+            $deletedFor = array_values(array_unique(array_map(
+                'intval',
+                $locked->deleted_for ?? []
+            )));
+
+            if (in_array($me, $deletedFor, true)) {
+                return [$locked, false];
             }
 
-            $seen = $locked->reads()
-                ->where('user_id', '!=', $locked->sender_id)
-                ->exists();
+            $deletedFor[] = $me;
+            $locked->deleted_for = $deletedFor;
+            $locked->save();
 
-            if ($seen) {
-                $deletedFor = array_map('intval', $locked->deleted_for ?? []);
-                $deletedFor[] = $me;
+            return [$locked, true];
+        });
 
-                $locked->deleted_for = array_values(array_unique($deletedFor));
-                $locked->save();
-
-                return [$locked, 'local', [$me]];
-            }
-
-            // Private media is removed from MinIO, never from the local disk.
-            $paths = $locked->attachments()->pluck('storage_path')->all();
+        if ($mode === 'everyone') {
             if ($paths !== []) {
                 Storage::disk('minio')->delete($paths);
             }
-            $locked->attachments()->delete();
 
-            $locked->forceFill([
-                'body' => '',
-                'is_unsent' => true,
-                'unsent_at' => now(),
-                'unsent_by' => $me,
-            ])->save();
+            $message->load(['sender.profile', 'reads.user.profile']);
+            $event = new MessageUnsent($message, 'everyone', []);
 
-            return [$locked, 'everyone', []];
-        });
+            if ($changed) {
+                // "Delete for everyone" is the only mode that may reach the
+                // other participants.
+                broadcast($event);
 
-        $message->load(['sender.profile', 'reads.user.profile']);
-        $event = new MessageUnsent($message, $mode, $hiddenFor);
-        broadcast($event);
+                $conversation = $message->conversation;
+                $participantIds = $conversation->type === 'group'
+                    ? $conversation->group->members()->pluck('users.id')
+                    : $conversation->participants()->pluck('users.id');
 
-        // Unsend can change badge counts and the sidebar preview for everyone.
-        $conversation = $message->conversation;
-        $recipientIds = $conversation->type === 'group'
-            ? $conversation->group->members()->pluck('users.id')
-            : $conversation->participants()->pluck('users.id');
+                foreach ($participantIds as $userId) {
+                    $id = (int) $userId;
+                    broadcast(new UnreadCountsUpdated($id, UnreadCounter::for($id)));
+                    broadcast(new ConversationsUpdated($id));
+                }
+            }
 
-        foreach ($recipientIds as $userId) {
-            $id = (int) $userId;
-            broadcast(new UnreadCountsUpdated($id, UnreadCounter::for($id)));
-            // Refreshes the sidebar even for participants not in the chat.
-            broadcast(new ConversationsUpdated($id));
+            return response()->json($event->broadcastWith());
         }
 
-        return response()->json($event->broadcastWith());
+        // Local delete: refresh only the caller's own unread counts and
+        // sidebar. No event is ever emitted to the other participants.
+        $counts = UnreadCounter::for($me);
+        broadcast(new UnreadCountsUpdated($me, $counts));
+        broadcast(new ConversationsUpdated($me));
+
+        return response()->json([
+            'mode' => 'me',
+            'changed' => $changed,
+            'id' => (int) $message->id,
+            'message_id' => (int) $message->id,
+            'conversation_id' => (int) $message->conversation_id,
+            'hidden_for' => [$me],
+            'unread_counts' => $counts,
+        ]);
+    }
+
+    /**
+     * Persist a live-delivered message as seen. Without this, a message
+     * watched arriving over the socket had no message_reads row, so a
+     * subsequent "delete for everyone" incorrectly looked unseen.
+     */
+    public function markSeen(Message $message): JsonResponse
+    {
+        $meUser = auth()->user()->loadMissing('profile');
+        $me = (int) $meUser->id;
+
+        $this->authorize('view', $message->conversation);
+
+        abort_if((int) $message->sender_id === $me, 422, 'You cannot mark your own message as seen.');
+        abort_if($message->is_unsent, 422, 'This message was unsent.');
+        abort_if($message->isDeletedFor($me), 404);
+
+        $read = MessageRead::firstOrCreate(
+            ['message_id' => $message->id, 'user_id' => $me],
+            ['read_at' => now()]
+        );
+
+        $counts = UnreadCounter::for($me);
+
+        if ($read->wasRecentlyCreated) {
+            $read->load(['user.profile', 'message']);
+
+            if ($meUser->readReceiptsEnabled()) {
+                broadcast(new MessageSeen($read, $counts));
+            }
+        }
+
+        broadcast(new UnreadCountsUpdated($me, $counts));
+
+        return response()->json([
+            'status' => 'seen',
+            'message_id' => (int) $message->id,
+            'read_at' => $read->read_at?->toISOString(),
+            'unread_counts' => $counts,
+        ]);
     }
 
     /**

@@ -147,6 +147,64 @@ class ConversationController extends Controller
         ]);
     }
 
+    /**
+     * Persist read receipts for a conversation that is currently visible.
+     * Used when messages arrive live or when the tab regains focus, so the
+     * server's seen state matches what the recipient actually saw.
+     */
+    public function markSeen(Conversation $conversation): JsonResponse
+    {
+        $this->authorize('view', $conversation);
+
+        abort_if($conversation->isPendingRequest(), 403, 'Accept or delete this message request first.');
+
+        $meUser = auth()->user()->loadMissing('profile');
+        $me = (int) $meUser->id;
+        $newReads = [];
+
+        DB::transaction(function () use ($conversation, $me, &$newReads) {
+            $ids = $conversation->messages()
+                ->visibleTo($me)
+                ->where('sender_id', '!=', $me)
+                ->where('is_unsent', false)
+                ->whereDoesntHave('reads', fn ($q) => $q->where('user_id', $me))
+                ->pluck('id');
+
+            if ($ids->isNotEmpty()) {
+                MessageRead::insertOrIgnore($ids->map(fn ($id) => [
+                    'message_id' => $id,
+                    'user_id' => $me,
+                    'read_at' => now(),
+                ])->all());
+
+                $newReads = MessageRead::where('user_id', $me)
+                    ->whereIn('message_id', $ids)
+                    ->with(['user.profile', 'message'])
+                    ->get()
+                    ->all();
+            }
+
+            $conversation->participants()->updateExistingPivot($me, ['last_read_at' => now()]);
+        });
+
+        $counts = UnreadCounter::for($me);
+
+        if ($meUser->readReceiptsEnabled()) {
+            foreach ($newReads as $read) {
+                broadcast(new MessageSeen($read, $counts));
+            }
+        }
+
+        broadcast(new UnreadCountsUpdated($me, $counts));
+
+        return response()->json([
+            'status' => 'seen',
+            'conversation_id' => (int) $conversation->id,
+            'new_reads' => count($newReads),
+            'counts' => $counts,
+        ]);
+    }
+
     /** Find or create the single 1:1 conversation with an accepted friend. */
     public function storeDirect(User $user): JsonResponse
     {

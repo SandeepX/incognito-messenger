@@ -67,6 +67,7 @@ const state = {
     activeNote: null,
     currentRequest: null,
     pendingAttachments: [],
+    deleteTarget: null,
     notificationCount: 0,
     chatFilter: '',
     chatSearchQuery: '',
@@ -1002,6 +1003,54 @@ function applyUnreadCounts(counts) {
     renderConversationList();
 }
 
+/* ================================================================
+ * Seen receipts for live messages
+ * ================================================================ */
+const seenRequests = { inFlight: new Set(), queued: new Set() };
+
+async function markConversationSeen(id) {
+    const conversationId = Number(id);
+    if (!conversationId) return;
+
+    if (seenRequests.inFlight.has(conversationId)) {
+        seenRequests.queued.add(conversationId);
+        return;
+    }
+
+    seenRequests.inFlight.add(conversationId);
+    try {
+        const result = await api(`/api/conversations/${conversationId}/seen`, { method: 'POST' });
+        if (result?.counts) applyUnreadCounts(result.counts);
+    } catch {
+        // Best-effort: the next focus/open will try again.
+    } finally {
+        seenRequests.inFlight.delete(conversationId);
+        if (seenRequests.queued.delete(conversationId)) {
+            markConversationSeen(conversationId);
+        }
+    }
+}
+
+async function markMessageSeen(id) {
+    try {
+        const result = await api(`/api/messages/${id}/seen`, { method: 'POST' });
+        if (result?.unread_counts) applyUnreadCounts(result.unread_counts);
+    } catch {
+        // Best-effort; the batch seen endpoint on focus is the safety net.
+    }
+}
+
+function maybeMarkActiveConversationSeen() {
+    if (!state.active) return;
+    if (document.visibilityState !== 'visible') return;
+    markConversationSeen(state.active.id);
+}
+
+window.addEventListener('focus', maybeMarkActiveConversationSeen);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') maybeMarkActiveConversationSeen();
+});
+
 function conversationPreviewText(c) {
     const last = c.last_message;
     if (!last) return 'No messages yet';
@@ -1643,7 +1692,7 @@ function buildMessageRow(message, opts = {}) {
         <div class="msg-content">
             ${bubblePart}
         </div>
-        ${mine && !unsent ? `<span class="msg-actions"><button class="msg-menu-btn" type="button" data-unsend-id="${message.id}" aria-label="Unsend message" title="Unsend message">⋯</button></span>` : ''}`;
+        ${!unsent ? `<span class="msg-actions"><button class="msg-menu-btn" type="button" data-message-menu-id="${message.id}" aria-label="Message options" aria-haspopup="dialog" title="Message options">⋯</button></span>` : ''}`;
     return row;
 }
 
@@ -1736,30 +1785,81 @@ function prependMessagesToState(messages) {
     state.activeMessages = [...fresh, ...state.activeMessages];
 }
 
+function scheduleConversationsReload(delay = 80) {
+    clearTimeout(scheduleConversationsReload.timer);
+    scheduleConversationsReload.timer = setTimeout(loadConversations, delay);
+}
+
+function unsentPreviewFor(message) {
+    const byMe = Number(message.unsent_by) === Number(state.me.id);
+    return byMe ? 'You unsent a message' : `${message.sender_name ?? 'Someone'} unsent a message`;
+}
+
+function updateSidebarForUnsent(id, event) {
+    const conversationId = Number(event.conversation_id ?? event.message?.conversation_id);
+    const conv = state.conversations.find((c) => Number(c.id) === conversationId);
+    if (!conv || Number(conv.last_message?.id) !== Number(id)) return;
+
+    const payload = event.message ?? {};
+    conv.last_message = {
+        ...conv.last_message,
+        ...payload,
+        id: Number(payload.id ?? conv.last_message.id),
+        is_unsent: true,
+        body: '',
+        attachments: [],
+        seen_by: [],
+        status: 'unsent',
+        // Wording is per-viewer ("You" vs the sender's name), so never reuse
+        // the broadcast preview that was rendered with a null viewer.
+        preview: unsentPreviewFor(payload),
+    };
+    renderConversationList();
+}
+
 function applyUnsent(event) {
     const id = Number(event.id ?? event.message_id);
     if (!id) return;
 
     const hiddenFor = (event.hidden_for ?? []).map(Number);
-    const local = state.activeMessages.find((m) => Number(m.id) === id);
-    if (local) {
-        if (hiddenFor.includes(state.me.id)) {
-            state.activeMessages = state.activeMessages.filter((m) => Number(m.id) !== id);
-        } else if (event.mode === 'everyone' && event.message) {
-            Object.assign(local, event.message);
-        } else if (event.mode === 'everyone') {
-            local.is_unsent = true;
-            local.body = '';
-            local.attachments = [];
-            local.seen_by = [];
-            local.status = 'unsent';
-            local.preview = event.preview || local.preview;
-        }
-        if (state.active) rerenderMessagesPreserveScroll();
+    const mode = event.mode || (event.message ? 'everyone' : 'me');
+
+    if (hiddenFor.includes(state.me.id)) {
+        removeMessageForMe(id, { reload: false });
+        scheduleConversationsReload();
+        return;
     }
 
-    clearTimeout(applyUnsent.reloadTimer);
-    applyUnsent.reloadTimer = setTimeout(loadConversations, 80);
+    if (mode === 'everyone') {
+        const local = state.activeMessages.find((m) => Number(m.id) === id);
+        if (local) {
+            if (event.message) {
+                // Replace in place: same array index, id, createdAt, sort key.
+                Object.assign(local, event.message);
+                local.preview = unsentPreviewFor(local);
+            } else {
+                local.is_unsent = true;
+                local.body = '';
+                local.attachments = [];
+                local.seen_by = [];
+                local.status = 'unsent';
+                local.preview = event.preview || unsentPreviewFor(local);
+            }
+            if (state.active) rerenderMessagesPreserveScroll();
+        }
+        updateSidebarForUnsent(id, event);
+        scheduleConversationsReload();
+    }
+}
+
+function removeMessageForMe(id, opts = {}) {
+    const target = Number(id);
+    const before = state.activeMessages.length;
+    state.activeMessages = state.activeMessages.filter((m) => Number(m.id) !== target);
+    if (state.activeMessages.length !== before && state.active) {
+        rerenderMessagesPreserveScroll();
+    }
+    if (opts.reload !== false) scheduleConversationsReload();
 }
 
 function showTypingRow() {
@@ -1923,6 +2023,9 @@ async function openConversation(id) {
             } else {
                 state.unseen += 1;
                 updateJumpLatest();
+            }
+            if (!mine && document.visibilityState === 'visible') {
+                markMessageSeen(message.id);
             }
             hideTypingIndicator();
             renderConversationList();
@@ -2211,9 +2314,17 @@ function notificationText(event) {
 function updateNotificationBadge() {
     const badge = $('notification-badge');
     if (!badge) return;
-    const count = state.notificationCount || 0;
-    badge.textContent = count ? (count > 99 ? '99+' : String(count)) : '';
+    const count = Math.max(0, Number(state.notificationCount) || 0);
+    badge.textContent = count ? (count > 9 ? '9+' : String(count)) : '';
     badge.hidden = !count;
+    badge.setAttribute(
+        'aria-label',
+        count ? `${count} unread notification${count === 1 ? '' : 's'}` : 'No unread notifications'
+    );
+    $('notification-btn')?.setAttribute(
+        'aria-label',
+        count ? `Notifications, ${count} unread` : 'Notifications'
+    );
 }
 
 async function loadNotifications() {
@@ -2228,13 +2339,232 @@ async function loadNotifications() {
             list.innerHTML = '<div class="empty-list">No notifications yet.</div>';
             return;
         }
-        list.innerHTML = items.map((n) => `
-            <div class="member-row" data-notification-id="${n.id}">
+        list.innerHTML = items.map((n) => {
+            const unread = !n.read_at;
+            return `
+            <div class="member-row notification-row${unread ? ' unread' : ''}"
+                 data-notification-id="${n.id}"
+                 data-read="${unread ? '0' : '1'}"
+                 role="button" tabindex="0"
+                 aria-label="${esc(notificationText(n))}${unread ? ', unread' : ''}">
                 <span class="who" style="font-size:13px">${esc(notificationText(n))}<small>${esc(n.created_at ? new Date(n.created_at).toLocaleString() : '')}</small></span>
-                ${!n.read_at ? '<span class="badge" style="width:8px;height:8px;min-width:8px;padding:0"></span>' : ''}
-            </div>`).join('');
+                ${unread ? '<span class="notification-dot" aria-hidden="true"></span>' : ''}
+            </div>`;
+        }).join('');
     } catch (error) {
         console.warn('notifications load failed', error);
+    }
+}
+
+function markNotificationRowRead(row) {
+    if (!row || row.dataset.read === '1') return;
+    row.dataset.read = '1';
+    row.classList.remove('unread');
+    row.querySelector('.notification-dot')?.remove();
+    row.setAttribute('aria-label', row.getAttribute('aria-label')?.replace(/, unread$/, '') || '');
+}
+
+async function markNotificationRead(id) {
+    const row = document.querySelector(`[data-notification-id="${id}"]`);
+    if (!row || row.dataset.read === '1') return;
+
+    const previousCount = state.notificationCount;
+    markNotificationRowRead(row);
+
+    // Optimistic: one notification read means one fewer unread badge item.
+    state.notificationCount = Math.max(0, previousCount - 1);
+    updateNotificationBadge();
+
+    try {
+        const result = await api(`/api/notifications/${id}/read`, { method: 'POST' });
+        state.notificationCount = result.unread_count ?? state.notificationCount;
+        updateNotificationBadge();
+    } catch (error) {
+        state.notificationCount = previousCount;
+        updateNotificationBadge();
+        toast(error.message);
+        await loadNotifications();
+    }
+}
+
+/* ================================================================
+ * Delete message dialog
+ * ================================================================ */
+const DELETE_FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+function deleteDialogOpen() {
+    return $('delete-message-modal')?.classList.contains('show') === true;
+}
+
+function resetDeleteButtonLabels() {
+    const everyone = $('delete-everyone-btn');
+    const forMe = $('delete-for-me-btn');
+    if (everyone) everyone.querySelector('.delete-option-title').textContent = 'Delete for everyone';
+    if (forMe) forMe.querySelector('.delete-option-title').textContent = 'Delete for you';
+}
+
+function applyDeleteAvailability() {
+    const target = state.deleteTarget;
+    if (!target) return;
+    const everyone = $('delete-everyone-btn');
+    const note = $('delete-seen-note');
+    const blocked = !target.mine || target.seen;
+    everyone.disabled = blocked;
+    note.hidden = !blocked;
+    note.textContent = target.seen
+        ? 'Seen messages can only be deleted for you.'
+        : 'Messages from others can only be deleted for you.';
+}
+
+function openDeleteDialog(id, trigger) {
+    const message = state.activeMessages.find((m) => Number(m.id) === Number(id));
+    if (!message) return;
+
+    const mine = Number(message.sender_id) === Number(state.me.id);
+    const seen = message.status === 'seen'
+        || (message.seen_by ?? []).length > 0
+        || message._deleteEveryoneBlocked === true;
+
+    state.deleteTarget = { id: Number(message.id), message, trigger: trigger || null, mine, seen };
+    state.deleteBusy = false;
+
+    const modal = $('delete-message-modal');
+    const error = $('delete-error');
+    if (error) error.textContent = '';
+    resetDeleteButtonLabels();
+    if ($('delete-for-me-btn')) $('delete-for-me-btn').disabled = false;
+    if ($('delete-cancel-btn')) $('delete-cancel-btn').disabled = false;
+    applyDeleteAvailability();
+
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+
+    requestAnimationFrame(() => {
+        const everyone = $('delete-everyone-btn');
+        const first = everyone && !everyone.disabled ? everyone : $('delete-for-me-btn');
+        first?.focus();
+    });
+}
+
+function closeDeleteDialog() {
+    if (state.deleteBusy) return;
+    const target = state.deleteTarget;
+    const modal = $('delete-message-modal');
+    if (!modal || !modal.classList.contains('show')) {
+        state.deleteTarget = null;
+        return;
+    }
+
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+    if ($('delete-error')) $('delete-error').textContent = '';
+    state.deleteTarget = null;
+
+    let focusTarget = target?.trigger;
+    if (focusTarget && !document.contains(focusTarget)) {
+        focusTarget = document.querySelector(`[data-message-menu-id="${target.id}"]`);
+    }
+    if (!focusTarget && target) {
+        const box = $('messages');
+        box?.setAttribute('tabindex', '-1');
+        focusTarget = box;
+    }
+    focusTarget?.focus?.();
+}
+
+function setDeleteLoading(mode) {
+    state.deleteBusy = true;
+    const everyone = $('delete-everyone-btn');
+    const forMe = $('delete-for-me-btn');
+    const cancel = $('delete-cancel-btn');
+
+    everyone.disabled = true;
+    forMe.disabled = true;
+    if (cancel) cancel.disabled = true;
+
+    if (mode === 'everyone') {
+        everyone.querySelector('.delete-option-title').textContent = 'Deleting…';
+    } else {
+        forMe.querySelector('.delete-option-title').textContent = 'Deleting…';
+    }
+}
+
+async function confirmDelete(mode) {
+    const target = state.deleteTarget;
+    if (!target || state.deleteBusy) return;
+
+    setDeleteLoading(mode);
+    if ($('delete-error')) $('delete-error').textContent = '';
+
+    try {
+        const result = await api(`/api/messages/${target.id}/unsend`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+        });
+
+        if (mode === 'everyone') {
+            applyUnsent(result);
+            toast('Message deleted for everyone.');
+        } else {
+            removeMessageForMe(target.id);
+            toast('Message deleted for you.');
+        }
+
+        state.deleteBusy = false;
+        closeDeleteDialog();
+    } catch (error) {
+        state.deleteBusy = false;
+
+        const message = String(error?.message || 'Could not delete the message.');
+        if ($('delete-error')) $('delete-error').textContent = message;
+
+        // The server may have discovered a seen receipt that our local
+        // snapshot had not received yet. Reflect the authoritative decision.
+        if (/seen/i.test(message) && target.mine) {
+            target.seen = true;
+            target.message._deleteEveryoneBlocked = true;
+            applyDeleteAvailability();
+        }
+
+        resetDeleteButtonLabels();
+        const everyone = $('delete-everyone-btn');
+        const forMe = $('delete-for-me-btn');
+        const cancel = $('delete-cancel-btn');
+        if (everyone) everyone.disabled = target.seen || !target.mine;
+        if (forMe) forMe.disabled = false;
+        if (cancel) cancel.disabled = false;
+
+        toast(message);
+    }
+}
+
+function trapDeleteDialogFocus(event) {
+    if (!deleteDialogOpen()) return;
+
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDeleteDialog();
+        return;
+    }
+
+    if (event.key !== 'Tab') return;
+
+    const dialog = $('delete-message-modal')?.querySelector('.delete-dialog');
+    if (!dialog) return;
+    const focusable = Array.from(dialog.querySelectorAll(DELETE_FOCUSABLE))
+        .filter((el) => !el.hidden && el.offsetParent !== null);
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
     }
 }
 
@@ -2430,22 +2760,12 @@ function bindEvents() {
         updateSendButton();
     });
 
-    // Messages clicks (unsend, lightbox)
+    // Messages clicks (delete menu, lightbox)
     $('messages')?.addEventListener('click', async (event) => {
-        const unsendButton = event.target.closest('[data-unsend-id]');
-        if (unsendButton) {
-            const id = Number(unsendButton.dataset.unsendId);
-            const confirmed = window.confirm('Unsend this message? If it has already been seen, it will only be removed from your view.');
-            if (!confirmed) return;
-            unsendButton.disabled = true;
-            try {
-                const result = await api(`/api/messages/${id}/unsend`, { method: 'POST' });
-                applyUnsent(result);
-                toast('Message unsent.');
-            } catch (error) {
-                unsendButton.disabled = false;
-                toast(error.message);
-            }
+        const menuButton = event.target.closest('[data-message-menu-id]');
+        if (menuButton) {
+            event.stopPropagation();
+            openDeleteDialog(Number(menuButton.dataset.messageMenuId), menuButton);
             return;
         }
         const image = event.target.closest('.msg-image');
@@ -2694,13 +3014,46 @@ function bindEvents() {
         await loadNotifications();
     });
     $('notifications-read-btn')?.addEventListener('click', async () => {
+        const previousCount = state.notificationCount;
+
+        // Optimistic: close immediately and clear the bell badge.
+        state.notificationCount = 0;
+        updateNotificationBadge();
+        $('notifications-modal')?.classList.remove('show');
+
         try {
-            await api('/api/notifications/read-all', { method: 'POST' });
-            state.notificationCount = 0;
+            const result = await api('/api/notifications/read-all', { method: 'POST' });
+            state.notificationCount = result.unread_count ?? 0;
             updateNotificationBadge();
+            document.querySelectorAll('#notifications-list .notification-row').forEach((row) => markNotificationRowRead(row));
+            toast('All notifications marked as read.');
+        } catch (error) {
+            state.notificationCount = previousCount;
+            updateNotificationBadge();
+            toast(error.message);
             await loadNotifications();
-        } catch (error) { toast(error.message); }
+        }
     });
+    $('notifications-list')?.addEventListener('click', (event) => {
+        const row = event.target.closest('[data-notification-id]');
+        if (row) markNotificationRead(row.dataset.notificationId);
+    });
+    $('notifications-list')?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const row = event.target.closest('[data-notification-id]');
+        if (!row) return;
+        event.preventDefault();
+        markNotificationRead(row.dataset.notificationId);
+    });
+
+    // Delete message dialog
+    $('delete-everyone-btn')?.addEventListener('click', () => confirmDelete('everyone'));
+    $('delete-for-me-btn')?.addEventListener('click', () => confirmDelete('me'));
+    $('delete-cancel-btn')?.addEventListener('click', () => closeDeleteDialog());
+    $('delete-message-modal')?.addEventListener('click', (event) => {
+        if (event.target === $('delete-message-modal')) closeDeleteDialog();
+    });
+    document.addEventListener('keydown', trapDeleteDialogFocus);
 
     // Modal close helpers
     document.querySelectorAll('[data-close]').forEach((button) => {
@@ -2740,6 +3093,23 @@ window.Echo.private(`user.${state.me.id}`)
         loadConversations();
         if (state.sideTab === 'requests' && state.requestsUI.subTab === 'received') {
             markRequestsSeen();
+        }
+    })
+    .listen('.NotificationRead', (event) => {
+        if (event.unread_count != null) {
+            state.notificationCount = event.unread_count;
+            updateNotificationBadge();
+        }
+
+        const listOpen = $('notifications-modal')?.classList.contains('show');
+        if (event.all) {
+            if (listOpen) loadNotifications();
+            return;
+        }
+
+        if (event.notification_id != null) {
+            const row = document.querySelector(`[data-notification-id="${event.notification_id}"]`);
+            if (row) markNotificationRowRead(row);
         }
     });
 

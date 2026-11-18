@@ -10,9 +10,9 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Broadcast after the database has decided whether the unsend is global
- * (unseen) or local (already seen). `hidden_for` tells each browser whether
- * to remove the row entirely rather than show the unsent placeholder.
+ * Broadcast only for "delete for everyone" (unseen messages). Local
+ * "delete for me" writes never reach other participants: the row is simply
+ * omitted from their own history via message.deleted_for.
  */
 class MessageUnsent implements ShouldBroadcastNow
 {

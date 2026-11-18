@@ -70,12 +70,16 @@ Route::middleware('auth')->group(function () {
     Route::post('/api/conversations/direct/{user}', [ConversationController::class, 'storeDirect']);
     Route::get('/api/conversations', [ConversationController::class, 'index']);
     Route::get('/api/conversations/{conversation}', [ConversationController::class, 'show']);
+    Route::post('/api/conversations/{conversation}/seen', [ConversationController::class, 'markSeen'])
+        ->middleware('throttle:240,1');
 
     // Messages — authorization happens inside the controller + policy.
     Route::post('/api/conversations/{conversation}/messages', [MessageController::class, 'store'])
         ->middleware('throttle:120,1');
     Route::post('/api/messages/{message}/unsend', [MessageController::class, 'unsend'])
         ->middleware('throttle:60,1');
+    Route::post('/api/messages/{message}/seen', [MessageController::class, 'markSeen'])
+        ->middleware('throttle:240,1');
 
     // Presence — connect/disconnect plus a lightweight 30s heartbeat.
     Route::get('/api/presence', [PresenceController::class, 'index']);
