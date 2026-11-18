@@ -17,7 +17,7 @@ class PresenceController extends Controller
      */
     public function index(): JsonResponse
     {
-        $me = auth()->user();
+        $me = auth()->user()->loadMissing('profile');
         $ids = $this->audience($me);
 
         $users = User::whereIn('id', $ids)
@@ -27,7 +27,7 @@ class PresenceController extends Controller
             ->map(fn (User $user) => array_merge([
                 'id' => (int) $user->id,
                 'name' => $user->name,
-            ], $user->presencePayload()));
+            ], $user->presencePayloadFor((int) $me->id)));
 
         return response()->json($users);
     }
@@ -78,7 +78,16 @@ class PresenceController extends Controller
             ->pluck('user_id');
 
         $ids = array_merge([$user->id], $user->friendIds(), $sharedUserIds->all());
+        $ids = array_values(array_unique(array_map('intval', $ids)));
 
-        return array_values(array_unique(array_map('intval', $ids)));
+        $blockedIds = array_merge(
+            $user->blockedUserIds(),
+            $user->blockedBy()->pluck('blocker_id')->map(fn ($id) => (int) $id)->all(),
+        );
+        if ($blockedIds) {
+            $ids = array_values(array_diff($ids, $blockedIds));
+        }
+
+        return $ids;
     }
 }

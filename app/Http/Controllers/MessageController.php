@@ -188,9 +188,14 @@ class MessageController extends Controller
             return;
         }
 
-        $other = $conversation->otherParticipant(auth()->id());
+        $me = auth()->user()->loadMissing('profile');
+        $other = $conversation->otherParticipant((int) $me->id);
+        if ($other) {
+            $other->loadMissing('profile');
+            abort_if($me->blocksEitherWay((int) $other->id), 403, 'You cannot message this user.');
+        }
 
-        if ($other && auth()->user()->isFriendsWith($other->id)) {
+        if ($other && $me->isFriendsWith((int) $other->id)) {
             return;
         }
 

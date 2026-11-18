@@ -9,17 +9,26 @@ class NotePolicy
 {
     public function view(User $user, Note $note): bool
     {
-        return $note->expires_at?->isFuture()
-            && ($user->id === $note->user_id || $user->isFriendsWith((int) $note->user_id));
+        if (! $note->expires_at?->isFuture()) {
+            return false;
+        }
+
+        if ((int) $user->id === (int) $note->user_id) {
+            return true;
+        }
+
+        $note->loadMissing('user.profile');
+
+        return $note->user?->canShowNoteTo((int) $user->id, $note) ?? false;
     }
 
     public function update(User $user, Note $note): bool
     {
-        return $user->id === $note->user_id;
+        return (int) $user->id === (int) $note->user_id;
     }
 
     public function delete(User $user, Note $note): bool
     {
-        return $user->id === $note->user_id;
+        return (int) $user->id === (int) $note->user_id;
     }
 }

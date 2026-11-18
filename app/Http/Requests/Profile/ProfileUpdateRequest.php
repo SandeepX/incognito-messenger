@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests\Profile;
 
-use App\Models\UserProfile;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -15,7 +14,8 @@ class ProfileUpdateRequest extends FormRequest
 
     public function rules(): array
     {
-        $profile = auth()->user()->profile;
+        $user = $this->user();
+        $profile = $user?->profile;
 
         return [
             'name' => ['required', 'string', 'max:255'],
@@ -25,22 +25,38 @@ class ProfileUpdateRequest extends FormRequest
             ],
             'email' => [
                 'required', 'string', 'email', 'max:255',
-                Rule::unique('users', 'email')->ignore(auth()->id()),
+                Rule::unique('users', 'email')->ignore($user?->id),
             ],
-            'bio' => ['nullable', 'string', 'max:500'],
-            'status' => ['nullable', 'string', 'max:120'],
-            'message_sounds' => ['boolean'],
-            'show_active_status' => ['boolean'],
+            'bio' => ['nullable', 'string', 'max:160'],
+            'status' => ['nullable', 'string', 'max:60'],
+            'show_active_status' => ['sometimes', 'boolean'],
+            'read_receipts' => ['sometimes', 'boolean'],
+            'message_request_policy' => ['sometimes', 'string', Rule::in(['everyone', 'friends_of_friends', 'nobody'])],
+            'notes_visibility' => ['sometimes', 'string', Rule::in(['friends', 'nobody'])],
         ];
     }
 
     protected function prepareForValidation(): void
     {
+        $merge = [];
+        if ($this->has('name')) {
+            $merge['name'] = trim((string) $this->input('name'));
+        }
         if ($this->has('username')) {
-            $this->merge(['username' => strtolower(trim($this->input('username')))]);
+            $merge['username'] = strtolower(trim((string) $this->input('username')));
         }
         if ($this->has('email')) {
-            $this->merge(['email' => strtolower(trim($this->input('email')))]);
+            $merge['email'] = strtolower(trim((string) $this->input('email')));
+        }
+        foreach (['bio', 'status'] as $field) {
+            if ($this->has($field)) {
+                $value = $this->input($field);
+                $merge[$field] = $value === null ? null : trim((string) $value);
+            }
+        }
+
+        if ($merge) {
+            $this->merge($merge);
         }
     }
 }

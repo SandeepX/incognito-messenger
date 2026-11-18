@@ -9,10 +9,13 @@ class MessageRequest extends Model
 {
     protected $fillable = [
         'sender_id', 'recipient_id', 'conversation_id', 'pair_key',
-        'body', 'status', 'responded_at',
+        'body', 'status', 'seen_at', 'responded_at',
     ];
 
-    protected $casts = ['responded_at' => 'datetime'];
+    protected $casts = [
+        'seen_at' => 'datetime',
+        'responded_at' => 'datetime',
+    ];
 
     public function sender(): BelongsTo
     {

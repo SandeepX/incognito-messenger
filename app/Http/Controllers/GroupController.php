@@ -27,7 +27,7 @@ class GroupController extends Controller
             'description' => $group->description,
             'avatar' => $group->avatar_path
                 ? route('avatars.show', ['filename' => basename($group->avatar_path)])
-                : asset('images/default-avatar.svg'),
+                : null,
             'creator_id' => $group->creator_id,
             'conversation_id' => $group->conversation->id,
             'is_admin' => $group->isAdmin(auth()->id()),

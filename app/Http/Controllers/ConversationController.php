@@ -18,9 +18,10 @@ class ConversationController extends Controller
     /** Conversation list for the sidebar (one query + eager loads). */
     public function index(): JsonResponse
     {
-        $me = auth()->id();
+        $meUser = auth()->user()->loadMissing('profile');
+        $me = (int) $meUser->id;
 
-        $conversations = auth()->user()->conversations()
+        $conversations = $meUser->conversations()
             // Message requests are deliberately absent from the normal list
             // until the recipient accepts them.
             ->where(function ($query) {
@@ -33,9 +34,10 @@ class ConversationController extends Controller
                 'group' => fn ($q) => $q->withCount('members'),
                 'latestMessage' => fn ($q) => $q->visibleTo($me),
                 'latestMessage.sender.profile',
+                'latestMessage.reads.user.profile',
             ])
             ->get()
-            ->map(function (Conversation $c) use ($me) {
+            ->map(function (Conversation $c) use ($me, $meUser) {
                 $other = null;
 
                 if ($c->type === 'group' && $c->group) {
@@ -43,12 +45,12 @@ class ConversationController extends Controller
                     $subtitle = $c->group->members_count.' members';
                     $avatar = $c->group->avatar_path
                         ? route('avatars.show', ['filename' => basename($c->group->avatar_path)])
-                        : asset('images/default-avatar.svg');
+                        : null;
                 } else {
                     $other = $c->participants->first(fn (User $u) => $u->id !== $me);
                     $name = $other?->name ?? 'Unknown';
                     $subtitle = $other ? '@'.$other->username : '';
-                    $avatar = $other?->avatarUrl() ?? asset('images/default-avatar.svg');
+                    $avatar = $other?->avatarUrl();
                 }
 
                 $last = $c->latestMessage;
@@ -62,9 +64,9 @@ class ConversationController extends Controller
                     'subtitle' => $subtitle,
                     'avatar' => $avatar,
                     ...($other
-                        ? $other->notePayload($me)
+                        ? array_merge($other->notePayload($me), $other->presencePayloadFor($me))
                         : ['has_note' => false, 'note' => null]),
-                    'last_message' => $last?->payload($me),
+                    'last_message' => $last?->payload($me, $meUser),
                     'last_at' => $last?->created_at?->toISOString(),
                 ];
             });
@@ -85,13 +87,15 @@ class ConversationController extends Controller
 
         abort_if($conversation->isPendingRequest(), 403, 'Accept or delete this message request first.');
 
-        $me = auth()->id();
+        $meUser = auth()->user()->loadMissing('profile');
+        $me = (int) $meUser->id;
         $newReads = [];
 
         DB::transaction(function () use ($conversation, $me, &$newReads) {
             $ids = $conversation->messages()
                 ->visibleTo($me)
                 ->where('sender_id', '!=', $me)
+                ->where('is_unsent', false)
                 ->whereDoesntHave('reads', fn ($q) => $q->where('user_id', $me))
                 ->pluck('id');
 
@@ -119,8 +123,10 @@ class ConversationController extends Controller
         // response must all agree, even if a websocket event is missed.
         $counts = UnreadCounter::for($me);
 
-        foreach ($newReads as $read) {
-            broadcast(new MessageSeen($read, $counts));
+        if ($meUser->readReceiptsEnabled()) {
+            foreach ($newReads as $read) {
+                broadcast(new MessageSeen($read, $counts));
+            }
         }
 
         // Other tabs of the same user should drop their badges too.
@@ -133,7 +139,7 @@ class ConversationController extends Controller
             ->cursorPaginate(30);
 
         return response()->json([
-            'data' => collect($page->items())->map(fn (Message $m) => $m->payload($me))->all(),
+            'data' => collect($page->items())->map(fn (Message $m) => $m->payload($me, $meUser))->all(),
             'next_cursor' => $page->nextCursor()?->encode(),
             'conversation_id' => $conversation->id,
             'unread' => $counts[$conversation->id] ?? 0,
@@ -144,16 +150,19 @@ class ConversationController extends Controller
     /** Find or create the single 1:1 conversation with an accepted friend. */
     public function storeDirect(User $user): JsonResponse
     {
-        $me = auth()->id();
+        $meUser = auth()->user()->loadMissing('profile');
+        $user->loadMissing('profile');
+        $me = (int) $meUser->id;
 
         abort_if($user->id === $me, 422, 'You cannot chat with yourself.');
+        abort_if($meUser->blocksEitherWay((int) $user->id), 403, 'You cannot start a conversation with this user.');
         abort_unless(
-            auth()->user()->isFriendsWith($user->id),
+            $meUser->isFriendsWith((int) $user->id),
             403,
             'Only accepted friends can start a conversation. Send a friend request or message request first.',
         );
 
-        $key = Conversation::directKey($me, $user->id);
+        $key = Conversation::directKey($me, (int) $user->id);
 
         $conversation = DB::transaction(function () use ($key, $me, $user) {
             $conversation = Conversation::firstOrCreate(

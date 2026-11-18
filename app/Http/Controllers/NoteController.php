@@ -31,23 +31,25 @@ class NoteController extends Controller
         ];
     }
 
-    /** Active notes from me and my accepted friends only. */
+    /** Active notes from me and friends who allow me to see their notes. */
     public function index(Request $request): JsonResponse
     {
-        $me = auth()->user();
+        $me = auth()->user()->loadMissing('profile');
         $friendIds = $me->friendIds();
-        $ids = array_merge([$me->id], $friendIds);
+        $ids = array_merge([(int) $me->id], $friendIds);
 
-        $page = Note::query()
+        $notes = Note::query()
             ->active()
             ->whereIn('user_id', $ids)
-            ->with('user.profile')
+            ->with(['user.profile', 'user.activeNote'])
             ->latest()
-            ->cursorPaginate(20);
+            ->get()
+            ->filter(fn (Note $note) => $note->user?->canShowNoteTo((int) $me->id, $note))
+            ->values();
 
         return response()->json([
-            'data' => collect($page->items())->map(fn (Note $n) => $this->payload($n))->all(),
-            'next_cursor' => $page->nextCursor()?->encode(),
+            'data' => $notes->map(fn (Note $n) => $this->payload($n))->all(),
+            'next_cursor' => null,
         ]);
     }
 
@@ -76,7 +78,7 @@ class NoteController extends Controller
             ]);
         });
 
-        $note->load('user.profile');
+        $note->load(['user.profile', 'user.activeNote']);
         $this->notifyFriends('note_posted', $note);
 
         return response()->json($this->payload($note), 201);
@@ -94,7 +96,7 @@ class NoteController extends Controller
             'content' => $data['content'],
             'expires_at' => now()->addDay(),
         ]);
-        $note->load('user.profile');
+        $note->load(['user.profile', 'user.activeNote']);
         $this->notifyFriends('note_updated', $note);
 
         return response()->json($this->payload($note));
@@ -104,19 +106,25 @@ class NoteController extends Controller
     {
         $this->authorize('delete', $note);
 
+        $note->loadMissing(['user.profile', 'user.activeNote']);
+        $wasVisible = true;
         $note->delete();
-        $this->notifyFriends('note_deleted', $note);
+        $this->notifyFriends('note_deleted', $note, $wasVisible);
 
         return response()->json(['status' => 'deleted']);
     }
 
     /** Keep friends' note clouds and avatar indicators in sync in realtime. */
-    private function notifyFriends(string $type, Note $note): void
+    private function notifyFriends(string $type, Note $note, bool $forceVisible = false): void
     {
-        $user = auth()->user();
+        $user = auth()->user()->loadMissing('profile');
 
         foreach ($user->friendIds() as $friendId) {
-            Notifier::send($friendId, $type, [
+            if (! $forceVisible && ! $user->canShowNoteTo((int) $friendId, $note)) {
+                continue;
+            }
+
+            Notifier::send((int) $friendId, $type, [
                 'user_id' => $user->id,
                 'name' => $user->name,
                 'username' => $user->username,

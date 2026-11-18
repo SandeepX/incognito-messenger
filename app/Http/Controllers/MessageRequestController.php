@@ -11,6 +11,7 @@ use App\Models\Message;
 use App\Models\MessageRead;
 use App\Models\MessageRequest;
 use App\Models\User;
+use App\Models\UserBlock;
 use App\Support\Notifier;
 use App\Support\PairKey;
 use App\Support\UnreadCounter;
@@ -22,14 +23,14 @@ class MessageRequestController extends Controller
 {
     private function payload(MessageRequest $request, string $side): array
     {
+        $viewerId = (int) auth()->id();
         $other = $side === 'incoming' ? $request->sender : $request->recipient;
 
         return [
             'id' => $request->id,
             'conversation_id' => $request->conversation_id,
             'status' => $request->status,
-            // The `user` below is always the OTHER person, so tell the UI
-            // which side of the request the current user is on.
+            'type' => 'message',
             'direction' => $side,
             'user' => [
                 'id' => $other->id,
@@ -38,12 +39,14 @@ class MessageRequestController extends Controller
                 'avatar' => $other->avatarUrl(),
                 'bio' => $other->profile?->bio,
                 'status_text' => $other->profile?->status,
-                // Notes stay friends-only: a pending request never reveals
-                // even the cloud marker, let alone the note text.
-                ...$other->notePayload((int) auth()->id()),
+                ...$other->notePayload($viewerId),
+                ...$other->presencePayloadFor($viewerId),
             ],
             'preview' => $request->body,
             'created_at' => $request->created_at?->toISOString(),
+            'responded_at' => $request->responded_at?->toISOString(),
+            'seen_at' => $request->seen_at?->toISOString(),
+            'unseen' => $side === 'incoming' && $request->status === 'pending' && $request->seen_at === null,
         ];
     }
 
@@ -52,17 +55,25 @@ class MessageRequestController extends Controller
         $me = auth()->id();
 
         $incoming = MessageRequest::where('recipient_id', $me)->where('status', 'pending')
-            ->with(['sender.profile', 'sender.activeNote'])->latest()->paginate(20)
-            ->through(fn (MessageRequest $r) => $this->payload($r, 'incoming'));
+            ->with(['sender.profile', 'sender.activeNote'])->latest()
+            ->get()
+            ->map(fn (MessageRequest $r) => $this->payload($r, 'incoming'))
+            ->values();
 
         $sent = MessageRequest::where('sender_id', $me)->where('status', 'pending')
-            ->with(['recipient.profile', 'recipient.activeNote'])->latest()->paginate(20)
-            ->through(fn (MessageRequest $r) => $this->payload($r, 'sent'));
+            ->with(['recipient.profile', 'recipient.activeNote'])->latest()
+            ->get()
+            ->map(fn (MessageRequest $r) => $this->payload($r, 'sent'))
+            ->values();
 
         return response()->json([
             'incoming' => $incoming,
             'sent' => $sent,
-            'counts' => ['incoming' => $incoming->total(), 'sent' => $sent->total()],
+            'counts' => [
+                'incoming' => $incoming->count(),
+                'sent' => $sent->count(),
+                'unseen_incoming' => $incoming->where('unseen', true)->count(),
+            ],
         ]);
     }
 
@@ -77,14 +88,15 @@ class MessageRequestController extends Controller
             'recipient.profile',
             'recipient.activeNote',
         ]);
-        $side = $messageRequest->sender_id === auth()->id() ? 'sent' : 'incoming';
+        $viewer = auth()->user()->loadMissing('profile');
+        $side = $messageRequest->sender_id === $viewer->id ? 'sent' : 'incoming';
 
-        $viewerId = auth()->id();
+        $viewerId = (int) $viewer->id;
         $messages = $messageRequest->conversation->messages()
             ->visibleTo($viewerId)
             ->with(['sender.profile', 'reads.user.profile', 'attachments'])
             ->latest()->limit(20)->get()->reverse()->values()
-            ->map(fn (Message $m) => $m->payload($viewerId))->all();
+            ->map(fn (Message $m) => $m->payload($viewerId, $viewer))->all();
 
         return response()->json($this->payload($messageRequest, $side) + ['messages' => $messages]);
     }
@@ -98,12 +110,15 @@ class MessageRequestController extends Controller
         ]);
 
         $target = User::findOrFail($data['user_id']);
-        $me = auth()->user();
+        $me = auth()->user()->loadMissing('profile');
+        $target->loadMissing('profile');
 
         abort_if($target->id === $me->id, 422, 'You cannot message yourself.');
-        abort_if($me->isFriendsWith($target->id), 422, 'You are already friends — open the chat instead.');
+        abort_if($me->isFriendsWith((int) $target->id), 422, 'You are already friends — open the chat instead.');
+        abort_if($target->blocksEitherWay((int) $me->id), 403, 'You cannot send a message request to this user.');
+        abort_unless($target->canReceiveMessageRequestFrom($me), 403, 'This user is not accepting message requests.');
 
-        $key = PairKey::for($me->id, $target->id);
+        $key = PairKey::for((int) $me->id, (int) $target->id);
 
         abort_if(
             MessageRequest::where('pair_key', $key)->where('status', 'pending')->exists(),
@@ -112,13 +127,13 @@ class MessageRequestController extends Controller
         );
 
         $result = DB::transaction(function () use ($target, $me, $key, $data) {
-            $directKey = Conversation::directKey($me->id, $target->id);
+            $directKey = Conversation::directKey((int) $me->id, (int) $target->id);
 
             $conversation = Conversation::firstOrCreate(
                 ['direct_key' => $directKey],
                 ['type' => 'direct'],
             );
-            $conversation->participants()->syncWithoutDetaching([$me->id, $target->id]);
+            $conversation->participants()->syncWithoutDetaching([(int) $me->id, (int) $target->id]);
 
             $message = Message::create([
                 'conversation_id' => $conversation->id,
@@ -140,22 +155,23 @@ class MessageRequestController extends Controller
                     'body' => $data['body'],
                     'status' => 'pending',
                     'responded_at' => null,
+                    'seen_at' => null,
                 ],
             );
 
-            return [$messageRequest, $message, $target, $me];
+            return [$messageRequest, $message];
         });
 
-        [$messageRequest, $message, $target, $me] = $result;
+        [$messageRequest, $message] = $result;
 
         $message->load('sender.profile');
         broadcast(new MessageSent($message));
-        broadcast(new UnreadCountsUpdated($target->id, UnreadCounter::for($target->id)));
-        broadcast(new ConversationsUpdated($me->id));
-        broadcast(new ConversationsUpdated($target->id));
+        broadcast(new UnreadCountsUpdated((int) $target->id, UnreadCounter::for((int) $target->id)));
+        broadcast(new ConversationsUpdated((int) $me->id));
+        broadcast(new ConversationsUpdated((int) $target->id));
 
-        Notifier::send($target->id, 'message_request_received', [
-            'user_id' => $me->id,
+        Notifier::send((int) $target->id, 'message_request_received', [
+            'user_id' => (int) $me->id,
             'name' => $me->name,
             'username' => $me->username,
             'avatar' => $me->avatarUrl(),
@@ -167,12 +183,14 @@ class MessageRequestController extends Controller
             'id' => $messageRequest->id,
             'conversation_id' => $messageRequest->conversation_id,
             'status' => 'pending',
+            'created_at' => $messageRequest->created_at?->toISOString(),
         ], 201);
     }
 
     public function accept(MessageRequest $messageRequest): JsonResponse
     {
         $this->authorize('respond', $messageRequest);
+        abort_unless($messageRequest->status === 'pending', 409, 'This request is no longer pending.');
 
         DB::transaction(function () use ($messageRequest) {
             $messageRequest->update(['status' => 'accepted', 'responded_at' => now()]);
@@ -191,13 +209,18 @@ class MessageRequestController extends Controller
         broadcast(new ConversationsUpdated($messageRequest->sender_id));
         broadcast(new ConversationsUpdated($messageRequest->recipient_id));
 
-        return response()->json(['status' => 'accepted', 'conversation_id' => $messageRequest->conversation_id]);
+        return response()->json([
+            'status' => 'accepted',
+            'id' => $messageRequest->id,
+            'conversation_id' => $messageRequest->conversation_id,
+        ]);
     }
 
     /** Recipient deletes / rejects an incoming request. */
     public function delete(MessageRequest $messageRequest): JsonResponse
     {
         $this->authorize('respond', $messageRequest);
+        abort_unless($messageRequest->status === 'pending', 409, 'This request is no longer pending.');
 
         $messageRequest->update(['status' => 'deleted', 'responded_at' => now()]);
 
@@ -206,14 +229,58 @@ class MessageRequestController extends Controller
             'name' => auth()->user()->name,
         ]);
         broadcast(new ConversationsUpdated($messageRequest->sender_id));
+        broadcast(new ConversationsUpdated($messageRequest->recipient_id));
 
-        return response()->json(['status' => 'deleted']);
+        return response()->json(['status' => 'deleted', 'id' => $messageRequest->id]);
+    }
+
+    /** Block: removes the pending request and blocks the sender. */
+    public function block(MessageRequest $messageRequest): JsonResponse
+    {
+        $this->authorize('respond', $messageRequest);
+        abort_unless($messageRequest->status === 'pending', 409, 'This request is no longer pending.');
+
+        DB::transaction(function () use ($messageRequest) {
+            UserBlock::firstOrCreate([
+                'blocker_id' => (int) auth()->id(),
+                'blocked_id' => (int) $messageRequest->sender_id,
+            ]);
+            $messageRequest->update(['status' => 'deleted', 'responded_at' => now()]);
+        });
+
+        Notifier::send($messageRequest->sender_id, 'message_request_deleted', [
+            'user_id' => auth()->id(),
+            'name' => auth()->user()->name,
+        ]);
+        broadcast(new ConversationsUpdated($messageRequest->sender_id));
+        broadcast(new ConversationsUpdated($messageRequest->recipient_id));
+
+        return response()->json(['status' => 'blocked', 'id' => $messageRequest->id]);
+    }
+
+    /** Report: removes the pending request (no report storage system exists). */
+    public function report(MessageRequest $messageRequest): JsonResponse
+    {
+        $this->authorize('respond', $messageRequest);
+        abort_unless($messageRequest->status === 'pending', 409, 'This request is no longer pending.');
+
+        $messageRequest->update(['status' => 'deleted', 'responded_at' => now()]);
+
+        Notifier::send($messageRequest->sender_id, 'message_request_deleted', [
+            'user_id' => auth()->id(),
+            'name' => auth()->user()->name,
+        ]);
+        broadcast(new ConversationsUpdated($messageRequest->sender_id));
+        broadcast(new ConversationsUpdated($messageRequest->recipient_id));
+
+        return response()->json(['status' => 'reported', 'id' => $messageRequest->id]);
     }
 
     /** Sender withdraws their own pending request. */
     public function cancel(MessageRequest $messageRequest): JsonResponse
     {
         $this->authorize('cancel', $messageRequest);
+        abort_unless($messageRequest->status === 'pending', 409, 'This request is no longer pending.');
 
         $messageRequest->update(['status' => 'cancelled', 'responded_at' => now()]);
 
@@ -221,8 +288,62 @@ class MessageRequestController extends Controller
             'user_id' => auth()->id(),
             'name' => auth()->user()->name,
         ]);
+        broadcast(new ConversationsUpdated($messageRequest->sender_id));
         broadcast(new ConversationsUpdated($messageRequest->recipient_id));
 
-        return response()->json(['status' => 'cancelled']);
+        return response()->json(['status' => 'cancelled', 'id' => $messageRequest->id]);
+    }
+
+    public function undoDelete(MessageRequest $messageRequest): JsonResponse
+    {
+        $this->authorize('respond', $messageRequest);
+        abort_unless($messageRequest->status === 'deleted', 409, 'Cannot undo this action.');
+
+        $messageRequest->update(['status' => 'pending', 'responded_at' => null, 'seen_at' => now()]);
+
+        broadcast(new ConversationsUpdated($messageRequest->sender_id));
+        broadcast(new ConversationsUpdated($messageRequest->recipient_id));
+
+        return response()->json(['status' => 'pending', 'id' => $messageRequest->id]);
+    }
+
+    public function undoCancel(MessageRequest $messageRequest): JsonResponse
+    {
+        $this->authorize('cancel', $messageRequest);
+        abort_unless($messageRequest->status === 'cancelled', 409, 'Cannot undo this action.');
+
+        $messageRequest->update(['status' => 'pending', 'responded_at' => null, 'seen_at' => null]);
+
+        Notifier::send($messageRequest->recipient_id, 'message_request_received', [
+            'user_id' => auth()->id(),
+            'name' => auth()->user()->name,
+            'username' => auth()->user()->username,
+            'avatar' => auth()->user()->avatarUrl(),
+            'preview' => $messageRequest->body,
+            'request_id' => $messageRequest->id,
+        ]);
+        broadcast(new ConversationsUpdated($messageRequest->sender_id));
+        broadcast(new ConversationsUpdated($messageRequest->recipient_id));
+
+        return response()->json(['status' => 'pending', 'id' => $messageRequest->id]);
+    }
+
+    public function undoAccept(MessageRequest $messageRequest): JsonResponse
+    {
+        $this->authorize('respond', $messageRequest);
+        abort_unless($messageRequest->status === 'accepted', 409, 'Cannot undo this action.');
+
+        $a = (int) $messageRequest->sender_id;
+        $b = (int) $messageRequest->recipient_id;
+
+        DB::transaction(function () use ($messageRequest, $a, $b) {
+            Friendship::whereIn('pair_key', [$a.'-'.$b, $b.'-'.$a])->delete();
+            $messageRequest->update(['status' => 'pending', 'responded_at' => null, 'seen_at' => now()]);
+        });
+
+        broadcast(new ConversationsUpdated($a));
+        broadcast(new ConversationsUpdated($b));
+
+        return response()->json(['status' => 'pending', 'id' => $messageRequest->id]);
     }
 }

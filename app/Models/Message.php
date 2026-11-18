@@ -64,20 +64,11 @@ class Message extends Model
      * The viewer id is only used to choose the "You unsent a message" wording;
      * the socket payloads pass null and the browser decides from unsent_by.
      */
-    public function payload(?int $viewerId = null): array
+    public function payload(?int $viewerId = null, ?User $viewer = null): array
     {
         $reads = $this->relationLoaded('reads')
             ? $this->reads
             : $this->reads()->with('user.profile')->get();
-
-        $seenBy = $reads
-            ->where('user_id', '!=', $this->sender_id)
-            ->map(fn (MessageRead $read) => [
-                'user_id' => (int) $read->user_id,
-                'name' => $read->user?->name,
-                'avatar' => $read->user?->avatarUrl(),
-                'read_at' => $read->read_at?->toISOString(),
-            ])->values()->all();
 
         $unsent = (bool) $this->is_unsent;
         $attachments = $unsent
@@ -93,6 +84,20 @@ class Message extends Model
             : ($this->body ?: ($attachments->isNotEmpty()
                 ? '📎 '.$attachments->first()->original_filename
                 : ''));
+
+        $canSeeReceipts = $viewer ? $viewer->readReceiptsEnabled() : true;
+        $seenBy = [];
+        if (! $unsent && $canSeeReceipts) {
+            $seenBy = $reads
+                ->where('user_id', '!=', $this->sender_id)
+                ->filter(fn (MessageRead $read) => $read->user?->readReceiptsEnabled() ?? true)
+                ->map(fn (MessageRead $read) => [
+                    'user_id' => (int) $read->user_id,
+                    'name' => $read->user?->name,
+                    'avatar' => $read->user?->avatarUrl(),
+                    'read_at' => $read->read_at?->toISOString(),
+                ])->values()->all();
+        }
 
         return [
             'id' => $this->id,

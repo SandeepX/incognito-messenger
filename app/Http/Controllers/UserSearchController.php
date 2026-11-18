@@ -19,12 +19,17 @@ class UserSearchController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = trim((string) $request->input('q', ''));
-        $me = auth()->user();
+        $me = auth()->user()->loadMissing('profile');
         $findFriends = $request->input('scope') === 'find-friends';
+        $blockedIds = array_values(array_unique(array_merge(
+            $me->blockedUserIds(),
+            $me->blockedBy()->pluck('blocker_id')->map(fn ($id) => (int) $id)->all(),
+        )));
 
         $users = User::query()
             ->with(['profile', 'activeNote'])
             ->whereKeyNot($me->id)
+            ->when($blockedIds, fn ($q) => $q->whereNotIn('id', $blockedIds))
             ->when($findFriends, function ($q) use ($me) {
                 $q->whereNotIn('id', $me->friendIds())
                     // Pending in either direction: no duplicate or stale invites.
@@ -52,18 +57,28 @@ class UserSearchController extends Controller
         // One query for all existing threads instead of one per user.
         $conversationIds = Conversation::whereIn(
             'direct_key',
-            $users->map(fn (User $u) => Conversation::directKey($me->id, $u->id)),
+            $users->map(fn (User $u) => Conversation::directKey((int) $me->id, (int) $u->id)),
         )->pluck('id', 'direct_key');
 
-        return response()->json($users->map(fn (User $user) => [
+        $viewerId = (int) $me->id;
+        $results = $users->map(fn (User $user) => [
             'id' => $user->id,
             'name' => $user->name,
             'username' => $user->username,
             'avatar' => $user->avatarUrl(),
-            'is_friend' => $me->isFriendsWith($user->id),
-            ...$user->notePayload($me->id),
-            'conversation_id' => $conversationIds[Conversation::directKey($me->id, $user->id)] ?? null,
-            ...$user->presencePayload(),
-        ]));
+            'is_friend' => $me->isFriendsWith((int) $user->id),
+            ...$user->notePayload($viewerId),
+            'conversation_id' => $conversationIds[Conversation::directKey($viewerId, (int) $user->id)] ?? null,
+            ...$user->presencePayloadFor($viewerId),
+        ])->values();
+
+        if ($findFriends) {
+            $results = $results->filter(function (array $row) use ($me, $users) {
+                $target = $users->firstWhere('id', $row['id']);
+                return $target ? $target->canReceiveMessageRequestFrom($me) : false;
+            })->values();
+        }
+
+        return response()->json($results);
     }
 }

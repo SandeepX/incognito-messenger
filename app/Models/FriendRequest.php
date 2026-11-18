@@ -7,9 +7,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FriendRequest extends Model
 {
-    protected $fillable = ['sender_id', 'recipient_id', 'pair_key', 'status', 'note', 'responded_at'];
+    protected $fillable = ['sender_id', 'recipient_id', 'pair_key', 'status', 'note', 'seen_at', 'responded_at'];
 
-    protected $casts = ['responded_at' => 'datetime'];
+    protected $casts = [
+        'seen_at' => 'datetime',
+        'responded_at' => 'datetime',
+    ];
 
     public function sender(): BelongsTo
     {
