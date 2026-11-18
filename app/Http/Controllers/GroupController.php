@@ -109,8 +109,8 @@ class GroupController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:80'],
             'description' => ['nullable', 'string', 'max:300'],
-            'avatar' => ['nullable', 'file', 'image', 'mimes:jpeg,png,gif,webp', 'max:2048'],
-        ]);
+            'avatar' => AvatarUpload::rules(false),
+        ], AvatarUpload::messages());
 
         if ($request->hasFile('avatar')) {
             if ($group->avatar_path) {
