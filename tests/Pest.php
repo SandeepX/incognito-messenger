@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Models\UserProfile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Broadcast;
+use Tests\Support\ChecksChannels;
+use Tests\Support\CreatesUsers;
 use Tests\TestCase;
 
 /*
@@ -20,7 +22,7 @@ use Tests\TestCase;
 */
 
 pest()->extend(TestCase::class)
-    ->use(RefreshDatabase::class)
+    ->use(RefreshDatabase::class, CreatesUsers::class, ChecksChannels::class)
     ->in('Feature');
 
 pest()->extend(PHPUnit\Framework\TestCase::class)->in('Unit');
