@@ -1,43 +1,34 @@
 <?php
 
-namespace Tests\Feature;
-
 use App\Support\ReverbConnectionTerminator;
 use Illuminate\Support\Facades\Broadcast;
-use Mockery;
 use Pusher\Pusher;
-use Tests\TestCase;
 
-class ReverbConnectionTerminatorTest extends TestCase
-{
-    public function test_it_closes_existing_sockets_when_reverb_is_active(): void
+it('closes existing sockets when reverb is active', function () {
+    config(['broadcasting.default' => 'reverb']);
+
+    $pusher = Mockery::mock(Pusher::class);
+    $pusher->shouldReceive('terminateUserConnections')->once()->with('42');
+
+    $broadcaster = new class($pusher)
     {
-        config(['broadcasting.default' => 'reverb']);
+        public function __construct(private $pusher) {}
 
-        $pusher = Mockery::mock(Pusher::class);
-        $pusher->shouldReceive('terminateUserConnections')->once()->with('42');
-
-        $broadcaster = new class($pusher)
+        public function getPusher(): Pusher
         {
-            public function __construct(private $pusher) {}
+            return $this->pusher;
+        }
+    };
 
-            public function getPusher(): Pusher
-            {
-                return $this->pusher;
-            }
-        };
+    Broadcast::shouldReceive('connection')->once()->with('reverb')->andReturn($broadcaster);
 
-        Broadcast::shouldReceive('connection')->once()->with('reverb')->andReturn($broadcaster);
+    ReverbConnectionTerminator::forUser(42);
+});
 
-        ReverbConnectionTerminator::forUser(42);
-    }
+it('is skipped for non reverb drivers', function () {
+    config(['broadcasting.default' => 'null']);
 
-    public function test_it_is_skipped_for_non_reverb_drivers(): void
-    {
-        config(['broadcasting.default' => 'null']);
+    Broadcast::shouldReceive('connection')->never();
 
-        Broadcast::shouldReceive('connection')->never();
-
-        ReverbConnectionTerminator::forUser(42);
-    }
-}
+    ReverbConnectionTerminator::forUser(42);
+});
