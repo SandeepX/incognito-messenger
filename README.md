@@ -226,3 +226,4 @@ An optional pre-commit hook formats staged PHP files with Pint. Enable it per cl
 - Typing indicators are whispers: browser → Reverb → other browsers. They never reach Laravel and are throttled in the client.
 - The WebSocket key is baked into the JS bundle at build time; changing `REVERB_APP_KEY` requires `docker compose build`.
 - Avatar uploads are capped at 10 MB and message attachments at 20 MB each (5 per message). PHP allows 25 MB per file and 110 MB per request, and nginx allows 110 MB request bodies, so Laravel validates every file before PHP or nginx can truncate a valid batch.
+ 
