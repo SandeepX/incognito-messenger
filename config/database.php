@@ -38,10 +38,18 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
+            // Calls generate concurrent writes (signaling, presence, history).
+            // WAL plus a busy timeout keeps SQLite from throwing "database is
+            // locked" when two participants signal at the same time.
+            'busy_timeout' => env('DB_BUSY_TIMEOUT', 10000),
+            'journal_mode' => env('DB_JOURNAL_MODE', 'wal'),
             'synchronous' => null,
-            'transaction_mode' => 'DEFERRED',
+            // PHP 8.4 issues an explicit BEGIN for transactions. DEFERRED
+            // upgrades a read lock to a write lock, which makes SQLite fail
+            // immediately with "database is locked" instead of honouring the
+            // busy timeout. IMMEDIATE takes the write lock up front so
+            // concurrent call signaling waits and then proceeds.
+            'transaction_mode' => env('DB_TRANSACTION_MODE', 'IMMEDIATE'),
         ],
 
         'mysql' => [

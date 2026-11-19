@@ -3,42 +3,57 @@ import Pusher from 'pusher-js';
 
 window.Pusher = Pusher;
 
+const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.getAttribute('content')?.trim() || '';
+
 /*
- * Laravel Echo is a thin wrapper around a raw WebSocket connection.
- * Despite the "pusher" import, nothing is sent to pusher.com — with
- * broadcaster: 'reverb' all traffic goes to our local Reverb server
- * (ws://localhost:8080, credentials from .env via Vite).
+ * The whole app is served from ONE origin. In LAN HTTPS mode Caddy serves
+ * the Laravel app and proxies Reverb on that same origin. So the WebSocket
+ * host, port and TLS are derived from the page that loaded this script —
+ * nothing is baked in at build time and "localhost" is never assumed.
+ *
+ * The same bundle therefore works when opened from:
+ *   - http://localhost:8000            (local dev, split ports)
+ *   - http://192.168.x.y:8000          (LAN over plain HTTP)
+ *   - https://192.168.x.y:8443         (Caddy single-origin HTTPS)
+ *   - https://chat.example.com         (reverse proxy / domain)
+ *
+ * Split setups where Reverb listens on its own port (php artisan serve on
+ * 8000 + php artisan reverb:start on 8080, with no proxy) can emit a
+ * `reverb-port` meta tag from the server to override the port. An empty tag
+ * (the default) means "use the same port that served the page".
  */
-/*
- * The WebSocket host is derived from window.location.hostname instead of
- * being baked in, so the SAME build works when the page is opened from
- * localhost, from another machine via the server's LAN IP, or behind a
- * domain — the browser always connects to whatever host served the page.
- * (Baking VITE_REVERB_HOST=localhost would break LAN access: the other
- * machine's browser would try to open the WebSocket against itself.)
- */
+const secure = window.location.protocol === 'https:';
+const host = window.location.hostname;
+const pagePort = window.location.port || (secure ? '443' : '80');
+const reverbPort = Number(meta('reverb-port') || pagePort);
+const reverbPath = meta('reverb-path') || '/app';
+
 window.Echo = new Echo({
     broadcaster: 'reverb',
-    key: import.meta.env.VITE_REVERB_APP_KEY,
-    wsHost: window.location.hostname,
-    wsPort: import.meta.env.VITE_REVERB_PORT ?? 80,
-    wssPort: import.meta.env.VITE_REVERB_PORT ?? 443,
-    forceTLS: window.location.protocol === 'https:',
+    key: meta('reverb-key') || import.meta.env.VITE_REVERB_APP_KEY,
+    wsHost: host,
+    wsPort: reverbPort,
+    wssPort: reverbPort,
+    forceTLS: secure,
+    // pusher-js performs the TLS upgrade on the "ws" transport when
+    // forceTLS is true; "wss" is a separate transport used only in the
+    // non-TLS strategy. Enabling both keeps HTTP and HTTPS deployments
+    // working without a silent "no enabled transport" connection failure.
     enabledTransports: ['ws', 'wss'],
+    path: reverbPath,
 
-    // Private/presence subscriptions need CSRF protection because the
-    // auth handshake is a POST to /broadcasting/auth using the session.
+    // Private/presence channel authorization is a same-origin POST to
+    // /broadcasting/auth that uses the Laravel session. The CSRF token is
+    // rendered by the server into every authenticated page.
     auth: {
         headers: {
-            'X-CSRF-TOKEN': document
-                .querySelector('meta[name="csrf-token"]')
-                .getAttribute('content'),
+            'X-CSRF-TOKEN': meta('csrf-token'),
         },
     },
 });
 
-// Log every connection state change so you can literally watch the
-// WebSocket lifecycle in the browser console.
+// Log every connection state change so the WebSocket lifecycle can be
+// watched from the browser console (and by the dev diagnostics panel).
 window.Echo.connector.pusher.connection.bind('state_change', (states) => {
     console.log(`[WS] connection: ${states.previous} → ${states.current}`);
 });

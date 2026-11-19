@@ -61,6 +61,7 @@ services:
     environment:
       REVERB_HOST: reverb
       DB_DATABASE: /var/www/storage/db/database.sqlite
+      CACHE_STORE: file
     volumes:
       - db-data:/var/www/storage/db
     networks:
@@ -83,12 +84,10 @@ services:
     build:
       context: .
       args:
-        # Baked into the JS bundle: the BROWSER connects to ws://<page-host>:8080
-        # (the port published by the `reverb` container). The WS host comes
-        # from window.location.hostname at runtime, so LAN access needs no
-        # special handling. Compose interpolates the key from .env automatically.
+        # The browser derives host, port and TLS from window.location at
+        # runtime (see resources/js/echo.js), so no WS port is baked into the
+        # bundle. The key is interpolated from .env automatically.
         VITE_REVERB_APP_KEY: ${REVERB_APP_KEY}
-        VITE_REVERB_PORT: 8080
     image: incognito-messenger-app
     env_file: .env
     environment:
@@ -96,7 +95,8 @@ services:
       # service name, NOT localhost: inside the network, localhost is the
       # container itself. This causes "cURL error 7 ... Failed to connect".
       REVERB_HOST: reverb
-      APP_URL: http://localhost:8000
+      APP_URL: ${APP_URL}
+      CACHE_STORE: file
       # SQLite lives in storage/db (a directory volume works; a file-path
       # volume mount does not). env var overrides .env.
       DB_DATABASE: /var/www/storage/db/database.sqlite
@@ -139,6 +139,7 @@ services:
     environment:
       REVERB_HOST: reverb
       DB_DATABASE: /var/www/storage/db/database.sqlite
+      CACHE_STORE: file
     depends_on:
       migrate:
         condition: service_completed_successfully

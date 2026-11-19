@@ -82,7 +82,14 @@ return [
                     'scheme' => env('REVERB_SCHEME', 'https'),
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
                 ],
-                'allowed_origins' => ['*'],
+                // Comma-separated HOSTS from .env (e.g. 192.168.1.10).
+                // Reverb parses the Origin header with parse_url(..., PHP_URL_HOST)
+                // and compares only the hostname, so do NOT include the scheme
+                // or port here. Defaults to '*' for local development.
+                'allowed_origins' => array_values(array_filter(array_map(
+                    'trim',
+                    explode(',', env('REVERB_ALLOWED_ORIGINS', '*')),
+                ))),
                 'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
                 'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
                 'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),

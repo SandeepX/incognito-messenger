@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Call;
 use App\Models\Conversation;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -45,4 +46,21 @@ Broadcast::channel('conversation.{id}', function ($user, $id) {
 // Per-user channel for unread counts / account-specific notifications.
 Broadcast::channel('user.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
+});
+
+// Call signaling uses its own private user channel. The wire name is
+// "private-users.{id}" (Echo adds the "private-" prefix). Authorization
+// happens on every /broadcasting/auth request, so a user can only ever
+// subscribe to their own call channel — never another participant's.
+Broadcast::channel('users.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});
+
+// Optional per-call channel for deployments that prefer call-scoped
+// signaling. Only the two participants may join; membership is checked
+// live against the persisted call on every authorization request.
+Broadcast::channel('call.{callId}', function ($user, $callId) {
+    $call = Call::find($callId);
+
+    return $call?->isParticipant((int) $user->id) ?? false;
 });

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    @include('partials.reverb-meta')
     <meta name="user-id" content="{{ $me->id }}">
     <meta name="user-name" content="{{ $me->name }}">
     <meta name="user-username" content="{{ $me->username }}">

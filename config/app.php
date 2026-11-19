@@ -56,6 +56,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Browser Reverb Overrides
+    |--------------------------------------------------------------------------
+    |
+    | By default the browser derives the Reverb WebSocket host, port and TLS
+    | from window.location so a single build works over localhost, a LAN IP
+    | or behind an HTTPS proxy. These optional values let a split deployment
+    | (Reverb on a separate port, no proxy) override the port/path. Leave them
+    | empty for the single-origin Caddy setup documented in
+    | docs/lan-https-setup.md.
+    |
+    */
+
+    'reverb_browser_port' => env('REVERB_BROWSER_PORT', ''),
+    'reverb_browser_path' => env('REVERB_BROWSER_PATH', ''),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
@@ -65,7 +82,7 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => 'Asia/Kathmandu',
 
     /*
     |--------------------------------------------------------------------------

@@ -101,6 +101,8 @@ Route::middleware('auth')->group(function () {
         ->middleware('throttle:30,1');
     Route::post('/api/calls/{call}/reject', [CallController::class, 'reject'])
         ->middleware('throttle:30,1');
+    Route::post('/api/calls/{call}/busy', [CallController::class, 'busy'])
+        ->middleware('throttle:30,1');
     Route::post('/api/calls/{call}/cancel', [CallController::class, 'cancel'])
         ->middleware('throttle:30,1');
     Route::post('/api/calls/{call}/timeout', [CallController::class, 'timeout'])
