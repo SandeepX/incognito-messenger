@@ -1,20 +1,15 @@
 # ============================================================
 # Stage 1: build the frontend (Echo + Vite)
 #
-# The browser connects to the WebSocket through the HOST, so the
-# baked-in VITE_REVERB_* vars point at localhost:8080 — the port
-# docker-compose maps from the `reverb` container to your machine.
+# The browser derives the WebSocket host, port and TLS from window.location
+# at runtime (see resources/js/echo.js). Only the app key is baked into the
+# bundle, so one image works on localhost, a LAN IP, and a single-origin
+# HTTPS deployment without rebuilding.
 # ============================================================
 FROM node:23-alpine AS frontend
 
-# Only the app key and port are baked into the bundle; the WS host is
-# derived from window.location.hostname at runtime (see resources/js/echo.js),
-# so the image works from localhost AND from other machines via LAN IP.
 ARG VITE_REVERB_APP_KEY
-ARG VITE_REVERB_PORT=8080
-
-ENV VITE_REVERB_APP_KEY=${VITE_REVERB_APP_KEY} \
-    VITE_REVERB_PORT=${VITE_REVERB_PORT}
+ENV VITE_REVERB_APP_KEY=${VITE_REVERB_APP_KEY}
 
 WORKDIR /app
 COPY package.json package-lock.json ./

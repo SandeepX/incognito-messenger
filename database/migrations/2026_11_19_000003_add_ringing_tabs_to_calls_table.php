@@ -1,0 +1,24 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('calls', function (Blueprint $table) {
+            // Every callee tab that is currently ringing. Closing one tab
+            // must not stop the ring while another tab is still available.
+            $table->json('ringing_tabs')->nullable()->after('callee_tab_id');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('calls', function (Blueprint $table) {
+            $table->dropColumn('ringing_tabs');
+        });
+    }
+};
