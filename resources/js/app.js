@@ -1,4 +1,5 @@
 import './echo';
+import './call-ui';
 
 /*
  * Incognito Messenger — browser application.
@@ -387,7 +388,10 @@ window.addEventListener('pagehide', () => disconnectPresence());
 function disconnectPresence() {
     if (!navigator.sendBeacon) return;
     try {
-        navigator.sendBeacon('/api/presence/disconnect', new URLSearchParams({ _token: csrf() }));
+        navigator.sendBeacon('/api/presence/disconnect', new URLSearchParams({
+            _token: csrf(),
+            tab_id: window.incognitoCalls?.tabId || '',
+        }));
     } catch { /* best-effort */ }
 }
 
@@ -448,6 +452,7 @@ function unlockAudio() {
 
 function shouldPlayReceivedSound(message) {
     if (!state.settings.messageSounds) return false;
+    if (message.type === 'call') return false;
     if (isConvMuted(message.conversation_id)) return false;
     if (message.sender_id === state.me.id || message.is_unsent) return false;
     const activeChatFocused = state.active?.id === message.conversation_id
@@ -467,6 +472,7 @@ function messageIsSeen(message) {
 }
 
 function statusTicksHtml(message) {
+    if (message.type === 'call') return '';
     if (message.sender_id !== state.me.id || message.is_unsent) return '';
     const seen = messageIsSeen(message);
     const label = seen ? 'Seen' : 'Sent';
@@ -1054,6 +1060,7 @@ document.addEventListener('visibilitychange', () => {
 function conversationPreviewText(c) {
     const last = c.last_message;
     if (!last) return 'No messages yet';
+    if (last.type === 'call') return last.preview || 'Audio call';
     if (last.is_unsent) return last.preview || 'Message unsent';
     const prefix = last.sender_id === state.me.id ? 'You: ' : '';
     const body = last.body || (last.attachments?.length ? `📎 ${last.attachments[0].original_filename}` : '');
@@ -1537,6 +1544,34 @@ function updateChatHeader() {
     const groupBtn = $('group-info-btn');
     if (groupBtn) groupBtn.hidden = state.active.type !== 'group';
     updateMuteButton();
+    syncChatCallButton();
+}
+
+/** Bridge the existing vanilla chat state into the Alpine call button. */
+function syncChatCallButton() {
+    if (!state.active || state.active.type !== 'direct' || !state.active.peer_id) {
+        window.__incognitoChatPeer = null;
+        window.dispatchEvent(new CustomEvent('chat-peer-changed', { detail: null }));
+        return;
+    }
+
+    const presence = presenceInfo(state.active.peer_id);
+    const detail = {
+        peer: {
+            id: Number(state.active.peer_id),
+            name: state.active.name ?? 'Unknown',
+            username: state.active.peer_username || usernameFromSubtitle(state.active.subtitle),
+            avatar: state.active.avatar ?? null,
+            conversationId: Number(state.active.id),
+        },
+        online: presence.online,
+        blocked: !!state.active.blocked,
+    };
+
+    // Alpine may initialize after the first conversation is opened; keep the
+    // latest value so the button can hydrate itself.
+    window.__incognitoChatPeer = detail;
+    window.dispatchEvent(new CustomEvent('chat-peer-changed', { detail }));
 }
 
 function showChatView() {
@@ -1638,6 +1673,7 @@ function attachmentHtml(message) {
 
 function canGroup(prev, cur) {
     if (!prev || !cur) return false;
+    if (prev.type === 'call' || cur.type === 'call') return false;
     if (prev.sender_id !== cur.sender_id) return false;
     if (!!prev.is_unsent !== !!cur.is_unsent) return false;
     const a = new Date(prev.created_at).getTime();
@@ -1646,7 +1682,33 @@ function canGroup(prev, cur) {
     return Math.abs(b - a) <= 5 * 60 * 1000;
 }
 
+function buildCallMessageRow(message) {
+    const call = message.call || {};
+    const label = message.preview || (call.status === 'declined'
+        ? 'Declined audio call'
+        : call.status === 'missed'
+            ? 'Missed audio call'
+            : 'Audio call');
+    const missed = call.status === 'missed';
+    const canCallBack = missed && state.active?.type === 'direct' && state.active.peer_id;
+
+    const row = document.createElement('div');
+    row.className = 'call-msg-row';
+    row.dataset.id = message.id ?? '';
+    row.dataset.sender = message.sender_id ?? '';
+    row.innerHTML = `
+        <div class="call-msg-card" role="note" aria-label="${esc(label)}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a12 12 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>
+            <span>${esc(label)}</span>
+            ${canCallBack ? `<button class="call-back-btn" type="button" data-call-back="${esc(state.active.peer_id)}" aria-label="Call ${esc(state.active.name ?? 'back')}">Call back</button>` : ''}
+            <time datetime="${esc(message.created_at || '')}">${esc(message.time || formatTime(message.created_at))}</time>
+        </div>`;
+    return row;
+}
+
 function buildMessageRow(message, opts = {}) {
+    if (message.type === 'call') return buildCallMessageRow(message);
+
     const mine = message.sender_id === state.me.id;
     const unsent = message.is_unsent === true;
     const isLastInGroup = !!opts.isLastInGroup;
@@ -1716,6 +1778,13 @@ function buildMessagesFragment(messages) {
             fragment.appendChild(sep);
             currentGroup = null;
             prevDay = dayKey;
+        }
+
+        if (message.type === 'call') {
+            currentGroup = null;
+            prev = message;
+            fragment.appendChild(buildCallMessageRow(message));
+            return;
         }
 
         const mine = message.sender_id === state.me.id;
@@ -2024,7 +2093,7 @@ async function openConversation(id) {
                 state.unseen += 1;
                 updateJumpLatest();
             }
-            if (!mine && document.visibilityState === 'visible') {
+            if (!mine && message.type !== 'call' && document.visibilityState === 'visible') {
                 markMessageSeen(message.id);
             }
             hideTypingIndicator();
@@ -2324,6 +2393,7 @@ function notificationText(event) {
         case 'note_posted': return `${d.name || 'A friend'} added a note`;
         case 'note_updated': return `${d.name || 'A friend'} updated a note`;
         case 'note_deleted': return `${d.name || 'A friend'} removed a note`;
+        case 'missed_call': return `Missed audio call from ${d.name || 'a friend'}`;
         default: return 'New notification';
     }
 }
@@ -2362,6 +2432,8 @@ async function loadNotifications() {
             <div class="member-row notification-row${unread ? ' unread' : ''}"
                  data-notification-id="${n.id}"
                  data-read="${unread ? '0' : '1'}"
+                 data-notification-type="${esc(n.type || '')}"
+                 data-conversation-id="${esc(n.data?.conversation_id || '')}"
                  role="button" tabindex="0"
                  aria-label="${esc(notificationText(n))}${unread ? ', unread' : ''}">
                 <span class="who" style="font-size:13px">${esc(notificationText(n))}<small>${esc(n.created_at ? new Date(n.created_at).toLocaleString() : '')}</small></span>
@@ -2784,8 +2856,22 @@ function bindEvents() {
         updateSendButton();
     });
 
-    // Messages clicks (delete menu, lightbox)
+    // Messages clicks (call back, delete menu, lightbox)
     $('messages')?.addEventListener('click', async (event) => {
+        const callBack = event.target.closest('[data-call-back]');
+        if (callBack) {
+            event.stopPropagation();
+            const store = window.Alpine?.store('call');
+            if (!store || store.status !== 'idle' || !state.active || state.active.type !== 'direct') return;
+            store.startCall({
+                id: Number(callBack.dataset.callBack),
+                name: state.active.name || 'Unknown',
+                username: state.active.peer_username || usernameFromSubtitle(state.active.subtitle),
+                avatar: state.active.avatar || null,
+                conversationId: Number(state.active.id),
+            });
+            return;
+        }
         const menuButton = event.target.closest('[data-message-menu-id]');
         if (menuButton) {
             event.stopPropagation();
@@ -3060,7 +3146,13 @@ function bindEvents() {
     });
     $('notifications-list')?.addEventListener('click', (event) => {
         const row = event.target.closest('[data-notification-id]');
-        if (row) markNotificationRead(row.dataset.notificationId);
+        if (!row) return;
+        markNotificationRead(row.dataset.notificationId);
+        if (row.dataset.notificationType === 'missed_call' && row.dataset.conversationId) {
+            $('notifications-modal')?.classList.remove('show');
+            activateSideTab('chats');
+            openConversation(Number(row.dataset.conversationId));
+        }
     });
     $('notifications-list')?.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -3068,6 +3160,11 @@ function bindEvents() {
         if (!row) return;
         event.preventDefault();
         markNotificationRead(row.dataset.notificationId);
+        if (row.dataset.notificationType === 'missed_call' && row.dataset.conversationId) {
+            $('notifications-modal')?.classList.remove('show');
+            activateSideTab('chats');
+            openConversation(Number(row.dataset.conversationId));
+        }
     });
 
     // Delete message dialog

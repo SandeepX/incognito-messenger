@@ -33,6 +33,7 @@ class ProfileUpdateRequest extends FormRequest
             'read_receipts' => ['sometimes', 'boolean'],
             'message_request_policy' => ['sometimes', 'string', Rule::in(['everyone', 'friends_of_friends', 'nobody'])],
             'notes_visibility' => ['sometimes', 'string', Rule::in(['friends', 'nobody'])],
+            'allow_calls' => ['sometimes', 'string', Rule::in(['friends', 'nobody'])],
         ];
     }
 

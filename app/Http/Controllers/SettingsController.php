@@ -62,6 +62,7 @@ class SettingsController extends Controller
             'read_receipts',
             'message_request_policy',
             'notes_visibility',
+            'allow_calls',
         ]));
         if (! $profile->exists) {
             $profile->user_id = $user->id;
@@ -108,10 +109,11 @@ class SettingsController extends Controller
             'message_sounds' => ['sometimes', 'boolean'],
             'message_sounds_volume' => ['sometimes', 'integer', 'min:0', 'max:100'],
             'desktop_notifications' => ['sometimes', 'boolean'],
+            'call_ringtone' => ['sometimes', 'boolean'],
         ]);
 
         $profile = $this->profileFor($request->user());
-        foreach (['message_sounds', 'desktop_notifications'] as $boolean) {
+        foreach (['message_sounds', 'desktop_notifications', 'call_ringtone'] as $boolean) {
             if (array_key_exists($boolean, $data)) {
                 $profile->{$boolean} = (bool) $data[$boolean];
             }
@@ -126,6 +128,7 @@ class SettingsController extends Controller
             'message_sounds' => (bool) $profile->message_sounds,
             'message_sounds_volume' => (int) ($profile->message_sounds_volume ?? 100),
             'desktop_notifications' => (bool) $profile->desktop_notifications,
+            'call_ringtone' => (bool) ($profile->call_ringtone ?? true),
         ]);
     }
 
@@ -347,6 +350,8 @@ class SettingsController extends Controller
             'read_receipts' => $user->readReceiptsEnabled(),
             'message_request_policy' => $user->messageRequestPolicy(),
             'notes_visibility' => $user->notesVisibility(),
+            'allow_calls' => $user->callPolicy(),
+            'call_ringtone' => $user->callRingtoneEnabled(),
         ];
     }
 

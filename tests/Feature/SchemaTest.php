@@ -14,12 +14,13 @@ class SchemaTest extends TestCase
     {
         $expected = [
             'users' => ['name', 'email', 'password', 'last_active_at'],
-            'user_profiles' => ['user_id', 'username', 'avatar_path', 'status', 'bio', 'show_active_status', 'message_sounds'],
+            'user_profiles' => ['user_id', 'username', 'avatar_path', 'status', 'bio', 'show_active_status', 'message_sounds', 'allow_calls', 'call_ringtone'],
             'groups' => ['name', 'avatar_path', 'description', 'creator_id'],
             'conversations' => ['type', 'group_id', 'direct_key'],
             'conversation_participants' => ['conversation_id', 'user_id', 'last_read_at'],
             'group_members' => ['group_id', 'user_id', 'role'],
-            'messages' => ['conversation_id', 'sender_id', 'body', 'is_unsent', 'unsent_at', 'unsent_by', 'deleted_for'],
+            'messages' => ['conversation_id', 'sender_id', 'body', 'type', 'call_id', 'is_unsent', 'unsent_at', 'unsent_by', 'deleted_for'],
+            'calls' => ['caller_id', 'callee_id', 'conversation_id', 'status', 'end_reason', 'ended_by', 'ringing_at', 'answered_at', 'ended_at', 'duration_seconds', 'caller_tab_id', 'callee_tab_id'],
             'message_reads' => ['message_id', 'user_id', 'read_at'],
             'friendships' => ['user_id', 'friend_id', 'pair_key'],
             'friend_requests' => ['sender_id', 'recipient_id', 'pair_key', 'status', 'note'],
@@ -49,6 +50,7 @@ class SchemaTest extends TestCase
         $this->assertTrue($this->hasUniqueIndex('friend_requests', 'friend_requests_pair_key_unique'));
         $this->assertTrue($this->hasUniqueIndex('message_requests', 'message_requests_pair_key_unique'));
         $this->assertTrue($this->hasUniqueIndex('message_requests', 'message_requests_conversation_id_unique'));
+        $this->assertTrue($this->hasUniqueIndex('messages', 'messages_call_id_unique'));
     }
 
     private function hasUniqueIndex(string $table, string $index): bool

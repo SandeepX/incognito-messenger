@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\CallService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -11,6 +12,8 @@ class Message extends Model
         'conversation_id',
         'sender_id',
         'body',
+        'type',
+        'call_id',
         'is_unsent',
         'unsent_at',
         'unsent_by',
@@ -43,6 +46,11 @@ class Message extends Model
         return $this->hasMany(MessageAttachment::class);
     }
 
+    public function call(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Call::class);
+    }
+
     /** Messages hidden from this user's history (me-only unsend). */
     public function scopeVisibleTo(Builder $query, int $userId): Builder
     {
@@ -71,23 +79,33 @@ class Message extends Model
             : $this->reads()->with('user.profile')->get();
 
         $unsent = (bool) $this->is_unsent;
+        $isCall = $this->type === 'call';
         $attachments = $unsent
             ? collect()
             : ($this->relationLoaded('attachments')
                 ? $this->attachments
                 : $this->attachments()->get());
 
+        $call = null;
+        if ($isCall) {
+            $call = $this->relationLoaded('call')
+                ? $this->call
+                : $this->call()->with(['caller.profile', 'callee.profile'])->first();
+        }
+
         $preview = $unsent
             ? ($viewerId !== null && (int) $this->unsent_by === $viewerId
                 ? 'You unsent a message'
                 : ($this->sender?->name ?? 'Someone').' unsent a message')
-            : ($this->body ?: ($attachments->isNotEmpty()
-                ? '📎 '.$attachments->first()->original_filename
-                : ''));
+            : ($isCall
+                ? ($call ? CallService::messageLabel($call) : 'Audio call')
+                : ($this->body ?: ($attachments->isNotEmpty()
+                    ? '📎 '.$attachments->first()->original_filename
+                    : '')));
 
         $canSeeReceipts = $viewer ? $viewer->readReceiptsEnabled() : true;
         $seenBy = [];
-        if (! $unsent && $canSeeReceipts) {
+        if (! $unsent && ! $isCall && $canSeeReceipts) {
             $seenBy = $reads
                 ->where('user_id', '!=', $this->sender_id)
                 ->filter(fn (MessageRead $read) => $read->user?->readReceiptsEnabled() ?? true)
@@ -106,7 +124,9 @@ class Message extends Model
             'sender_name' => $this->sender->name,
             'sender_username' => $this->sender->username,
             'sender_avatar' => $this->sender->avatarUrl(),
-            'body' => $unsent ? '' : $this->body,
+            'type' => $isCall ? 'call' : 'text',
+            'call' => $call ? CallService::payload($call) : null,
+            'body' => $unsent || $isCall ? '' : $this->body,
             'preview' => $preview,
             'is_unsent' => $unsent,
             'unsent_at' => $this->unsent_at?->toISOString(),
@@ -114,7 +134,7 @@ class Message extends Model
             'created_at' => $this->created_at?->toISOString(),
             'time' => $this->created_at?->format('g:i A'),
             'status' => $unsent ? 'unsent' : ($seenBy ? 'seen' : 'sent'),
-            'seen_by' => $unsent ? [] : $seenBy,
+            'seen_by' => $unsent || $isCall ? [] : $seenBy,
             'attachments' => $attachments->map(fn (MessageAttachment $a) => $a->payload())->all(),
         ];
     }

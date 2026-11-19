@@ -35,6 +35,8 @@ class ConversationController extends Controller
                 'latestMessage' => fn ($q) => $q->visibleTo($me),
                 'latestMessage.sender.profile',
                 'latestMessage.reads.user.profile',
+                'latestMessage.call.caller.profile',
+                'latestMessage.call.callee.profile',
             ])
             ->get()
             ->map(function (Conversation $c) use ($me, $meUser) {
@@ -63,6 +65,7 @@ class ConversationController extends Controller
                     'name' => $name,
                     'subtitle' => $subtitle,
                     'avatar' => $avatar,
+                    'blocked' => $other ? $meUser->blocksEitherWay((int) $other->id) : false,
                     ...($other
                         ? array_merge($other->notePayload($me), $other->presencePayloadFor($me))
                         : ['has_note' => false, 'note' => null]),
@@ -96,6 +99,7 @@ class ConversationController extends Controller
                 ->visibleTo($me)
                 ->where('sender_id', '!=', $me)
                 ->where('is_unsent', false)
+                ->where('type', '!=', 'call')
                 ->whereDoesntHave('reads', fn ($q) => $q->where('user_id', $me))
                 ->pluck('id');
 
@@ -134,7 +138,7 @@ class ConversationController extends Controller
 
         $page = $conversation->messages()
             ->visibleTo($me)
-            ->with(['sender.profile', 'reads.user.profile', 'attachments'])
+            ->with(['sender.profile', 'reads.user.profile', 'attachments', 'call.caller.profile', 'call.callee.profile'])
             ->orderByDesc('id')
             ->cursorPaginate(30);
 
@@ -167,6 +171,7 @@ class ConversationController extends Controller
                 ->visibleTo($me)
                 ->where('sender_id', '!=', $me)
                 ->where('is_unsent', false)
+                ->where('type', '!=', 'call')
                 ->whereDoesntHave('reads', fn ($q) => $q->where('user_id', $me))
                 ->pluck('id');
 

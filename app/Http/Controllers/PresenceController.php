@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Events\PresenceUpdated;
 use App\Models\Conversation;
 use App\Models\User;
+use App\Support\CallService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class PresenceController extends Controller
@@ -39,8 +41,14 @@ class PresenceController extends Controller
     }
 
     /** Called via sendBeacon when the page/socket goes away. */
-    public function disconnect(): JsonResponse
+    public function disconnect(Request $request): JsonResponse
     {
+        $data = $request->validate([
+            'tab_id' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        CallService::endForUser((int) auth()->id(), ($data['tab_id'] ?? null) ?: null, 'disconnect');
+
         return $this->touch(false);
     }
 

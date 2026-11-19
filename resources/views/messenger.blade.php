@@ -14,6 +14,9 @@
     <meta name="user-show-active-status" content="{{ $me->showActiveStatus() ? '1' : '0' }}">
     <meta name="user-read-receipts" content="{{ $me->readReceiptsEnabled() ? '1' : '0' }}">
     <meta name="user-theme-preference" content="{{ $me->themePreference() }}">
+    <meta name="user-call-ringtone" content="{{ $me->callRingtoneEnabled() ? '1' : '0' }}">
+    <meta name="user-call-ringtone-volume" content="{{ $me->messageSoundsVolume() }}">
+    <meta name="user-allow-calls" content="{{ $me->callPolicy() }}">
     <title>Incognito Messenger</title>
     <script>
         (function () {
@@ -210,6 +213,20 @@
                     <button id="chat-mute-btn" class="icon-btn" type="button" title="Mute conversation" aria-label="Mute conversation" aria-pressed="false">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 8.5a5 5 0 0 1 0 7M17.5 5.5a9 9 0 0 1 0 13M6 9H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2l4 4V5z"/></svg>
                     </button>
+                    <button
+                        id="chat-call-btn"
+                        class="icon-btn"
+                        type="button"
+                        x-data="chatCallButton"
+                        x-show="peer"
+                        x-cloak
+                        x-bind:disabled="disabled()"
+                        x-bind:title="buttonTitle()"
+                        x-bind:aria-label="buttonTitle()"
+                        @click="call()"
+                    >
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a12 12 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>
+                    </button>
                     <button id="group-info-btn" class="icon-btn" type="button" title="Group settings" aria-label="Group settings" hidden>
                         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
                     </button>
@@ -385,5 +402,6 @@
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"><span id="toast-message"></span><button id="toast-action" class="toast-action" type="button" hidden></button></div>
+@include('partials.call-overlay')
 </body>
 </html>

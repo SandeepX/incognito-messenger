@@ -275,6 +275,32 @@ class User extends Authenticatable implements MustVerifyEmail
         return in_array($visibility, ['friends', 'nobody'], true) ? $visibility : 'friends';
     }
 
+    /** Who may ring this user: accepted friends only, or nobody. */
+    public function callPolicy(): string
+    {
+        $policy = $this->profile?->allow_calls ?? 'friends';
+
+        return in_array($policy, ['friends', 'nobody'], true) ? $policy : 'friends';
+    }
+
+    public function callRingtoneEnabled(): bool
+    {
+        return (bool) ($this->profile?->call_ringtone ?? true);
+    }
+
+    public function acceptsCallsFrom(User $caller): bool
+    {
+        if ((int) $caller->id === (int) $this->id) {
+            return false;
+        }
+
+        if ($this->blocksEitherWay((int) $caller->id)) {
+            return false;
+        }
+
+        return $this->callPolicy() !== 'nobody' && $this->isFriendsWith((int) $caller->id);
+    }
+
     public function canReceiveMessageRequestFrom(User $sender): bool
     {
         if ($sender->id === $this->id) {

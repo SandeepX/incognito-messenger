@@ -9,6 +9,15 @@
         $authUser = auth()->user()?->loadMissing('profile');
         $themePreference = $authUser?->themePreference() ?? 'system';
     @endphp
+    @auth
+        <meta name="user-id" content="{{ $authUser->id }}">
+        <meta name="user-name" content="{{ $authUser->name }}">
+        <meta name="user-username" content="{{ $authUser->username }}">
+        <meta name="user-avatar" content="{{ $authUser->avatarUrl() ?? '' }}">
+        <meta name="user-call-ringtone" content="{{ $authUser->callRingtoneEnabled() ? '1' : '0' }}">
+        <meta name="user-call-ringtone-volume" content="{{ $authUser->messageSoundsVolume() }}">
+        <meta name="user-allow-calls" content="{{ $authUser->callPolicy() }}">
+    @endauth
     <script>
         (function () {
             try {
@@ -90,6 +99,9 @@
         }
         @stack('styles')
     </style>
+    @auth
+        @vite('resources/js/call-ui.js')
+    @endauth
 </head>
 <body class="@yield('body-class')">
 <div class="shell @yield('shell-class')">
@@ -123,6 +135,9 @@
         @yield('content')
     </div>
 </div>
+@auth
+    @include('partials.call-overlay')
+@endauth
 @stack('scripts')
 </body>
 </html>

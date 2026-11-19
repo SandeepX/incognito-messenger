@@ -21,6 +21,8 @@ class UserProfile extends Model
         'read_receipts',
         'message_request_policy',
         'notes_visibility',
+        'allow_calls',
+        'call_ringtone',
     ];
 
     protected $casts = [
@@ -29,6 +31,7 @@ class UserProfile extends Model
         'message_sounds_volume' => 'integer',
         'desktop_notifications' => 'boolean',
         'read_receipts' => 'boolean',
+        'call_ringtone' => 'boolean',
     ];
 
     public function user(): BelongsTo

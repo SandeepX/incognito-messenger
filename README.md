@@ -11,6 +11,7 @@ A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel E
 - **Read receipts** — one grey tick for Sent, two blue ticks for Seen. A `message_reads` row is written only when a recipient actually opens the thread (never from a websocket receipt alone). Group messages show every reader, and receipts are included in every paginated message payload.
 - **Last-active presence** — green dot for “Active now”, relative text for recent visits, nothing after seven days. A 30-second heartbeat and socket connect/disconnect events persist `users.last_active_at`; the **Show active status** profile toggle hides both presence and the timestamp.
 - **Message sounds** — optional, on by default. A subtle tone plays for incoming messages (not for the focused chat, background-safe and deduplicated against your own socket echo) and a quieter one on successful send. Toggle it in **Profile → Message sounds**.
+- **1-to-1 audio calls** — WebRTC audio-only calls between accepted friends: ringing/accept/decline/cancel, busy and offline handling, mute, live timer, connection quality, speaker selection, a floating call bar and call-history messages with **Call back** for missed calls. Signaling runs over private per-user Reverb channels; the server checks friendship, blocks, call policy and one-active-call-per-user before anything rings. STUN works out of the box; TURN is optional through environment variables. Settings include **Allow audio calls from**, a ringtone toggle, a microphone test and input/output device pickers.
 - **Unsend** — sender-only. Unseen messages become a shared “unsent a message” placeholder on both sides; seen messages are removed only from the sender’s view. The server decides at request time from `message_reads`, and Reverb pushes the decision immediately.
 - **Private media & files** — images (JPEG/PNG/GIF/WebP) and documents (PDF, Word, Excel, TXT, CSV, ZIP) up to 20 MB each, max 5 per message. Everything is stored in a private MinIO bucket with generated names. Download/preview links are authorized by policy and stream through the app, so they work from localhost, a LAN address or a tunnel without exposing MinIO to the browser.
 - **Notes** — one active 60-character note per user, shown as a thought cloud in the notes strip and above avatars in Friends and Chats. Notes are visible only to the author and accepted friends, disappear after 24 hours, and can be edited or deleted anytime. Clicking a friend's note opens their chat.
@@ -84,6 +85,34 @@ MINIO_URL=http://localhost:19000
 
 `MINIO_ENDPOINT` is the server-to-server address used inside Docker (`http://minio:9000`); `MINIO_URL` is the optional browser-visible origin for the signed-URL disk. The browser never needs it: avatars and attachment previews are served through Laravel routes, so only the app's origin matters. Never put `MINIO_SECRET_KEY` in a `VITE_*` variable.
 
+### Audio calls and TURN
+
+Audio calls need a secure browser context: **HTTPS**, or `http://localhost` / `http://127.0.0.1` during development. Microphone permission is requested only when a call starts or is accepted.
+
+STUN is enough when both people are on the same LAN. Calls across different networks need a TURN relay. Configure it with:
+
+```dotenv
+WEBRTC_STUN_URLS="stun:stun.l.google.com:19302"
+WEBRTC_TURN_URLS="turn:turn.example.com:3478?transport=udp,turns:turn.example.com:5349?transport=tcp"
+WEBRTC_TURN_USERNAME=calluser
+WEBRTC_TURN_CREDENTIAL=strong-password
+```
+
+`WEBRTC_STUN_URLS` and `WEBRTC_TURN_URLS` accept comma-separated lists. Credentials are returned only by the authenticated `/api/calls/config` endpoint and are never committed to the JS bundle. Restart PHP after changing them.
+
+Signaling generates many short, concurrent writes (presence, call state, SDP/ICE). On SQLite the shipped configuration uses WAL mode, a 10s busy timeout and `IMMEDIATE` transactions, and rate limiting uses the **file** cache (`CACHE_STORE=file`, set in `docker-compose.yml`) so throttle counters never lock the database table. If you move to MySQL/Postgres or Redis cache, remove those SQLite-specific settings as appropriate.
+
+A minimal self-hosted coturn instance:
+
+```bash
+docker run -d --name coturn --restart=always --network=host \
+  coturn/coturn -n --log-file=stdout --lt-cred-mech --fingerprint \
+  --realm=turn.example.com --user=calluser:strong-password \
+  --min-port=49160 --max-port=49200 --no-cli
+```
+
+Open `3478/udp`, `3478/tcp` and the relay range `49160-49200/udp` in the firewall. For `turns:` add a TLS certificate and expose `5349/tcp`. Hosted TURN providers (Twilio Network Traversal, Metered, Cloudflare Calls, etc.) work the same way: put their URLs and short-lived credentials in the same variables.
+
 ## API overview
 
 All routes below require the session cookie and CSRF header.
@@ -97,6 +126,7 @@ All routes below require the session cookie and CSRF header.
 | Attachments | `GET /api/attachments/{id}/download`, `GET /api/attachments/{id}/preview` |
 | Chat | `GET /api/conversations`, `GET /api/conversations/{id}`, `POST /api/conversations/direct/{user}`, `POST /api/conversations/{id}/messages`, `POST /api/messages/{id}/unsend` |
 | Presence | `GET /api/presence`, `POST /api/presence/heartbeat`, `POST /api/presence/disconnect` |
+| Calls | `GET /api/calls/config`, `POST /api/calls/invite`, `POST /api/calls/{call}/ringing`, `POST /api/calls/{call}/leave`, `POST /api/calls/{call}/accept`, `POST /api/calls/{call}/reject`, `POST /api/calls/{call}/cancel`, `POST /api/calls/{call}/timeout`, `POST /api/calls/{call}/end`, `POST /api/calls/{call}/signal` |
 
 ### Message sound assets
 
@@ -126,15 +156,17 @@ Browser ──HTTP──► Controllers ──Gate/policy──► Database / Mi
 
 | Path | Purpose |
 |---|---|
-| `app/Models/` | Users, profiles, conversations, groups, messages, reads, friends, requests, notes, notifications, attachments |
+| `app/Models/` | Users, profiles, conversations, groups, messages, reads, friends, requests, notes, notifications, attachments, calls |
 | `app/Policies/` | Backend authorization rules for every owned resource |
-| `app/Http/Controllers/` | Auth, profile, avatar, chat, group, friend, request, note, notification and attachment controllers |
-| `app/Events/` | `MessageSent`, `MessageSeen`, `MessageUnsent`, `PresenceUpdated`, `NotificationCreated`, `ConversationsUpdated`, `UnreadCountsUpdated`, `AccessRevoked`, `GroupUpdated` |
-| `app/Support/` | `UnreadCounter`, `PairKey`, `Notifier`, `AttachmentUpload`, `ReverbConnectionTerminator` |
-| `app/Console/Commands/PruneOrphanedFiles.php` | Removes MinIO objects with no database row |
+| `app/Http/Controllers/` | Auth, profile, avatar, chat, group, friend, request, note, notification, attachment and call controllers |
+| `app/Events/` | `MessageSent`, `MessageSeen`, `MessageUnsent`, `PresenceUpdated`, `NotificationCreated`, `ConversationsUpdated`, `UnreadCountsUpdated`, `AccessRevoked`, `GroupUpdated`, `CallEvent` |
+| `app/Support/` | `UnreadCounter`, `PairKey`, `Notifier`, `AttachmentUpload`, `ReverbConnectionTerminator`, `CallService` |
+| `app/Console/Commands/` | `PruneOrphanedFiles`, `ExpireCalls` (scheduled every minute as a ringing-call safety net) |
 | `database/migrations/` | Full schema, indexes, foreign keys and cascades |
 | `docker/minio/` | Locally built MinIO server image and bucket init script |
 | `resources/js/app.js` | UI behaviour, fetch/XHR calls and Echo subscriptions |
+| `resources/js/calls/` | WebRTC engine, Alpine call store, overlay and chat call button |
+| `resources/css/calls.css` | Call overlay, floating bar and call-history styles |
 | `resources/css/app.css` | Messenger layout, notes, receipts, presence, unsend menu and attachment styles |
 | `public/sounds/` | Small preloaded WAV files used by the notification sounds |
 
@@ -157,7 +189,7 @@ docker compose logs -f minio
 
 `storage:prune-orphaned-files` only scans application-owned prefixes (`avatars/` and `conversations/`) and removes objects that no profile, group or message attachment references. Run with `--dry-run` first. Failed uploads are cleaned up immediately in the request; the command catches other orphans (for example, from an interrupted deploy).
 
-Tests cover registration/login, profile and avatar validation, direct-chat privacy, friend requests, message requests, rejection/cancellation, notes/expiry/visibility, read receipts (including groups and pagination), MinIO attachment authorization, realtime event/channel rules, notifications, group management, cascades, storage pruning and schema indexes.
+Tests cover registration/login, profile and avatar validation, direct-chat privacy, friend requests, message requests, rejection/cancellation, notes/expiry/visibility, read receipts (including groups and pagination), MinIO attachment authorization, realtime event/channel rules, notifications, group management, audio-call signaling/state/history, cascades, storage pruning and schema indexes.
 
 ## Notes
 

@@ -19,6 +19,9 @@ class UnreadCounter
             ->where('cp.user_id', $userId)
             ->where('messages.sender_id', '!=', $userId)
             ->where('messages.is_unsent', false)
+            // Call-history rows are system messages: they never create an
+            // unread badge or a read receipt.
+            ->where('messages.type', '!=', 'call')
             ->where(function ($query) use ($userId) {
                 $query->whereNull('messages.deleted_for')
                     ->orWhereJsonDoesntContain('messages.deleted_for', $userId);

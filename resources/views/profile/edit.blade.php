@@ -25,6 +25,8 @@
         'read_receipts' => $user->readReceiptsEnabled(),
         'message_request_policy' => $user->messageRequestPolicy(),
         'notes_visibility' => $user->notesVisibility(),
+        'allow_calls' => $user->callPolicy(),
+        'call_ringtone' => $user->callRingtoneEnabled(),
     ];
 @endphp
 
@@ -168,6 +170,7 @@
         <button type="button" class="nav-item" data-section="profile">Profile</button>
         <button type="button" class="nav-item" data-section="appearance">Appearance</button>
         <button type="button" class="nav-item" data-section="notifications">Notifications</button>
+        <button type="button" class="nav-item" data-section="calls">Calls</button>
         <button type="button" class="nav-item" data-section="privacy">Privacy</button>
         <button type="button" class="nav-item" data-section="account">Account</button>
     </nav>
@@ -177,6 +180,7 @@
             <button type="button" class="tab-item" role="tab" data-section="profile">Profile</button>
             <button type="button" class="tab-item" role="tab" data-section="appearance">Appearance</button>
             <button type="button" class="tab-item" role="tab" data-section="notifications">Notifications</button>
+            <button type="button" class="tab-item" role="tab" data-section="calls">Calls</button>
             <button type="button" class="tab-item" role="tab" data-section="privacy">Privacy</button>
             <button type="button" class="tab-item" role="tab" data-section="account">Account</button>
         </div>
@@ -287,6 +291,54 @@
                         <div id="desktop-notification-state" class="field-help" aria-live="polite" style="margin-top:6px;"></div>
                     </div>
                     <button type="button" id="desktop-notifications-switch" class="switch" role="switch" aria-checked="false" aria-labelledby="label-desktop-notifications"></button>
+                </div>
+            </section>
+
+            <section id="section-calls" class="section">
+                <h2>Calls</h2>
+                <p class="section-desc">Control who can ring you and check your audio devices.</p>
+
+                <div class="field">
+                    <label class="field-label" for="allow-calls">Allow audio calls from</label>
+                    <select id="allow-calls" class="save-tracked">
+                        <option value="friends">Friends</option>
+                        <option value="nobody">Nobody</option>
+                    </select>
+                    <div class="field-help">Calls are always 1-to-1 and only between accepted friends.</div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-meta">
+                        <div class="field-label" id="label-call-ringtone">Call ringtone</div>
+                        <div class="field-help">Play a ringtone for incoming calls. Volume follows your message sound volume.</div>
+                    </div>
+                    <button type="button" id="call-ringtone-switch" class="switch" role="switch" aria-checked="true" aria-labelledby="label-call-ringtone"></button>
+                </div>
+
+                <hr class="divider">
+
+                <div class="field">
+                    <div class="field-label">Microphone</div>
+                    <div class="field-help">Choose the microphone used for calls. The test is local only; nothing is uploaded.</div>
+                    <div class="inline-actions">
+                        <select id="call-mic-select" aria-label="Microphone" style="max-width:320px;"></select>
+                        <button type="button" id="test-mic-btn" class="btn btn-secondary btn-sm">Test microphone</button>
+                    </div>
+                    <div class="progress-wrap" aria-hidden="true"><div id="mic-level-bar" class="progress-bar"></div></div>
+                    <div id="mic-test-status" class="field-help" role="status" aria-live="polite"></div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">Speaker</div>
+                    <div class="field-help">Choose the audio output for calls. Availability depends on your browser.</div>
+                    <div class="inline-actions">
+                        <select id="call-speaker-select" aria-label="Speaker" style="max-width:320px;"></select>
+                    </div>
+                    <div id="speaker-device-help" class="field-help"></div>
+                </div>
+
+                <div id="call-https-warning" class="field-help" style="display:none;color:var(--danger);">
+                    Audio calls require HTTPS (localhost is allowed). Open this site over HTTPS to use the microphone.
                 </div>
             </section>
 
@@ -464,10 +516,11 @@
         blocked: JSON.parse(app.dataset.blocked || '[]'),
         sessions: JSON.parse(app.dataset.sessions || '[]'),
         crop: null,
+        micTest: null,
     };
 
-    const sections = ['profile','appearance','notifications','privacy','account'];
-    const saveFields = ['name','username','email','status','bio','show_active_status','read_receipts','message_request_policy','notes_visibility'];
+    const sections = ['profile','appearance','notifications','calls','privacy','account'];
+    const saveFields = ['name','username','email','status','bio','show_active_status','read_receipts','message_request_policy','notes_visibility','allow_calls'];
     const avatarAllowed = ['image/jpeg','image/png','image/gif','image/webp'];
     const maxAvatar = 10 * 1024 * 1024;
     let usernameTimer = null;
@@ -523,6 +576,7 @@
             btn.setAttribute('tabindex', active ? '0' : '-1');
         });
         if (location.hash !== `#${section}`) history.replaceState(null, '', `#${section}`);
+        if (section === 'calls') refreshCallDevices();
     }
 
     function initHashNav() {
@@ -674,6 +728,7 @@
             read_receipts: getSwitch('read-receipts'),
             message_request_policy: $('#message-request-policy').value,
             notes_visibility: $('#notes-visibility').value,
+            allow_calls: $('#allow-calls').value,
         };
     }
 
@@ -753,6 +808,8 @@
         setSwitch('read-receipts', source.read_receipts !== false);
         $('#message-request-policy').value = source.message_request_policy || 'everyone';
         $('#notes-visibility').value = source.notes_visibility || 'friends';
+        $('#allow-calls').value = source.allow_calls || 'friends';
+        setSwitch('call-ringtone-switch', source.call_ringtone !== false);
         updateCounters();
         updateEmailBadge(!!source.email_verified);
         setSwitch('message-sounds-switch', !!source.message_sounds);
@@ -901,10 +958,12 @@
             message_sounds: getSwitch('message-sounds-switch'),
             message_sounds_volume: Number($('#message-volume').value || 0),
             desktop_notifications: getSwitch('desktop-notifications-switch'),
+            call_ringtone: getSwitch('call-ringtone-switch'),
         };
         try {
             await api(routes.notifications, { method: 'POST', body: JSON.stringify(payload) });
             state.saved = { ...state.saved, ...payload };
+            window.incognitoCalls?.setRingtone(payload.call_ringtone, payload.message_sounds_volume);
             if (show) showSaved();
         } catch (e) {
             showToast('Could not save notification settings.', 'error');
@@ -958,6 +1017,174 @@
         }
         updateDesktopNotificationState();
         await saveNotificationPrefs(true);
+    }
+
+    // Calls
+    function secureCallContext() {
+        return window.isSecureContext
+            || location.hostname === 'localhost'
+            || location.hostname === '127.0.0.1'
+            || location.hostname === '[::1]';
+    }
+
+    function deviceStorageKey(kind) {
+        return `incognito-${kind}-device-${userId}`;
+    }
+
+    function storedDevice(kind) {
+        try { return localStorage.getItem(deviceStorageKey(kind)) || ''; } catch (e) { return ''; }
+    }
+
+    function storeDevice(kind, id) {
+        try { localStorage.setItem(deviceStorageKey(kind), id || ''); } catch (e) {}
+    }
+
+    function fillDeviceSelect(select, devices, savedId, fallbackLabel) {
+        if (!select) return;
+        const options = [{ id: '', label: 'System default' }].concat(
+            devices.map((device, index) => ({
+                id: device.deviceId,
+                label: device.label || `${fallbackLabel} ${index + 1}`,
+            }))
+        );
+        select.innerHTML = options.map((device) => (
+            `<option value="${escapeHtml(device.id)}">${escapeHtml(device.label)}</option>`
+        )).join('');
+        const valid = options.some((device) => device.id === savedId);
+        select.value = valid ? savedId : '';
+    }
+
+    async function refreshCallDevices() {
+        const micSelect = $('#call-mic-select');
+        const speakerSelect = $('#call-speaker-select');
+        if (!micSelect || !speakerSelect) return;
+
+        if (!navigator.mediaDevices?.enumerateDevices) {
+            micSelect.innerHTML = '<option value="">Not supported</option>';
+            speakerSelect.innerHTML = '<option value="">Not supported</option>';
+            micSelect.disabled = true;
+            speakerSelect.disabled = true;
+            $('#speaker-device-help').textContent = 'This browser cannot list audio devices.';
+            return;
+        }
+
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            fillDeviceSelect(
+                micSelect,
+                devices.filter((device) => device.kind === 'audioinput'),
+                storedDevice('mic'),
+                'Microphone'
+            );
+            const canSelectOutput = typeof HTMLMediaElement !== 'undefined'
+                && typeof HTMLMediaElement.prototype.setSinkId === 'function';
+            fillDeviceSelect(
+                speakerSelect,
+                canSelectOutput ? devices.filter((device) => device.kind === 'audiooutput') : [],
+                storedDevice('speaker'),
+                'Speaker'
+            );
+            speakerSelect.disabled = !canSelectOutput;
+            $('#speaker-device-help').textContent = canSelectOutput
+                ? 'Used for call audio only.'
+                : 'Speaker selection is not supported in this browser; the system default is used.';
+        } catch (e) {
+            $('#speaker-device-help').textContent = 'Could not read audio devices.';
+        }
+    }
+
+    async function stopMicTest() {
+        const test = state.micTest;
+        if (!test) return;
+        state.micTest = null;
+        if (test.raf) cancelAnimationFrame(test.raf);
+        if (test.timer) clearTimeout(test.timer);
+        test.stream.getTracks().forEach((track) => { try { track.stop(); } catch (e) {} });
+        if (test.ctx) { try { await test.ctx.close(); } catch (e) {} }
+        $('#mic-level-bar').style.width = '0%';
+        $('#test-mic-btn').textContent = 'Test microphone';
+        $('#mic-test-status').textContent = 'Test stopped.';
+    }
+
+    function micErrorMessage(error) {
+        const name = error?.name || '';
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+            return 'Microphone permission was denied. Allow microphone access in your browser settings, then try again.';
+        }
+        if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+            return 'No microphone was found. Connect a microphone and try again.';
+        }
+        if (name === 'NotReadableError' || name === 'TrackStartError') {
+            return 'Your microphone is in use by another app. Close it and try again.';
+        }
+        return error?.message || 'Could not start the microphone test.';
+    }
+
+    async function toggleMicTest() {
+        if (state.micTest) {
+            await stopMicTest();
+            return;
+        }
+        if (!secureCallContext()) {
+            $('#call-https-warning').style.display = 'block';
+            $('#mic-test-status').textContent = 'Audio calls require HTTPS (localhost is allowed).';
+            return;
+        }
+        if (!navigator.mediaDevices?.getUserMedia) {
+            $('#mic-test-status').textContent = 'This browser cannot access the microphone.';
+            return;
+        }
+
+        const btn = $('#test-mic-btn');
+        btn.disabled = true;
+        $('#mic-test-status').textContent = 'Requesting microphone permission…';
+
+        try {
+            const audio = {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            };
+            const deviceId = $('#call-mic-select').value;
+            if (deviceId) audio.deviceId = { exact: deviceId };
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+            await refreshCallDevices();
+
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) throw new Error('Audio analysis is not supported in this browser.');
+            const ctx = new Ctx();
+            if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 1024;
+            ctx.createMediaStreamSource(stream).connect(analyser);
+            const data = new Uint8Array(analyser.fftSize);
+
+            state.micTest = { stream, ctx, raf: null, timer: null };
+            const tick = () => {
+                if (!state.micTest) return;
+                analyser.getByteTimeDomainData(data);
+                let peak = 0;
+                for (let i = 0; i < data.length; i += 1) {
+                    peak = Math.max(peak, Math.abs(data[i] - 128));
+                }
+                const level = Math.min(100, Math.round((peak / 128) * 180));
+                $('#mic-level-bar').style.width = `${level}%`;
+                state.micTest.raf = requestAnimationFrame(tick);
+            };
+            tick();
+
+            state.micTest.timer = setTimeout(() => { stopMicTest(); }, 15000);
+            btn.textContent = 'Stop test';
+            $('#mic-test-status').textContent = 'Listening… speak normally. The test stops automatically after 15 seconds.';
+        } catch (error) {
+            $('#mic-test-status').textContent = micErrorMessage(error);
+            $('#mic-level-bar').style.width = '0%';
+            await stopMicTest();
+            $('#mic-test-status').textContent = micErrorMessage(error);
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     // Avatar crop
@@ -1347,6 +1574,21 @@
         $('#test-sound-btn').addEventListener('click', playTestSound);
         $('#desktop-notifications-switch').addEventListener('click', toggleDesktopNotifications);
         $('#desktop-notifications-switch').addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); $('#desktop-notifications-switch').click(); } });
+
+        // Calls
+        if (!secureCallContext()) $('#call-https-warning').style.display = 'block';
+        refreshCallDevices();
+        navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshCallDevices());
+        $('#call-mic-select').addEventListener('change', () => storeDevice('mic', $('#call-mic-select').value));
+        $('#call-speaker-select').addEventListener('change', () => storeDevice('speaker', $('#call-speaker-select').value));
+        $('#test-mic-btn').addEventListener('click', toggleMicTest);
+        $('#call-ringtone-switch').addEventListener('click', async () => {
+            const el = $('#call-ringtone-switch');
+            el.setAttribute('aria-checked', el.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+            await saveNotificationPrefs(true);
+        });
+        $('#call-ringtone-switch').addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); $('#call-ringtone-switch').click(); } });
+        window.addEventListener('pagehide', () => { if (state.micTest) stopMicTest(); });
 
         const openPicker = () => $('#avatar-file').click();
         $('#avatar-trigger').addEventListener('click', openPicker);

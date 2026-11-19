@@ -128,6 +128,8 @@ class MessageController extends Controller
 
             $this->authorize('view', $locked->conversation);
 
+            abort_if($locked->type === 'call', 422, 'Call history messages cannot be deleted.');
+
             if ($mode === 'everyone') {
                 abort_unless(
                     (int) $locked->sender_id === $me,
@@ -243,6 +245,7 @@ class MessageController extends Controller
 
         abort_if((int) $message->sender_id === $me, 422, 'You cannot mark your own message as seen.');
         abort_if($message->is_unsent, 422, 'This message was unsent.');
+        abort_if($message->type === 'call', 422, 'Call history messages do not have read receipts.');
         abort_if($message->isDeletedFor($me), 404);
 
         $read = MessageRead::firstOrCreate(

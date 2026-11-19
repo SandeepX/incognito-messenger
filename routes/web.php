@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\AvatarController;
+use App\Http\Controllers\CallController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\FriendController;
 use App\Http\Controllers\GroupController;
@@ -86,6 +87,31 @@ Route::middleware('auth')->group(function () {
     Route::post('/api/presence/heartbeat', [PresenceController::class, 'heartbeat'])
         ->middleware('throttle:120,1');
     Route::post('/api/presence/disconnect', [PresenceController::class, 'disconnect']);
+
+    // 1-to-1 audio calls. Signaling is relayed over the private user
+    // channels; these endpoints own validation and durable call state.
+    Route::get('/api/calls/config', [CallController::class, 'config']);
+    Route::post('/api/calls/invite', [CallController::class, 'invite'])
+        ->middleware('throttle:6,1');
+    Route::post('/api/calls/{call}/ringing', [CallController::class, 'ringing'])
+        ->middleware('throttle:60,1');
+    Route::post('/api/calls/{call}/leave', [CallController::class, 'leave'])
+        ->middleware('throttle:60,1');
+    Route::post('/api/calls/{call}/accept', [CallController::class, 'accept'])
+        ->middleware('throttle:30,1');
+    Route::post('/api/calls/{call}/reject', [CallController::class, 'reject'])
+        ->middleware('throttle:30,1');
+    Route::post('/api/calls/{call}/cancel', [CallController::class, 'cancel'])
+        ->middleware('throttle:30,1');
+    Route::post('/api/calls/{call}/timeout', [CallController::class, 'timeout'])
+        ->middleware('throttle:30,1');
+    Route::post('/api/calls/{call}/end', [CallController::class, 'end'])
+        ->middleware('throttle:60,1');
+    // Trickle ICE produces many small, concurrent requests. Throttling this
+    // route would write the shared database cache for every candidate, which
+    // locks SQLite and can drop the SDP offer itself. Validation and the
+    // active-participant check in CallController bound this endpoint instead.
+    Route::post('/api/calls/{call}/signal', [CallController::class, 'signal']);
 
     // Groups — every endpoint is membership/admin authorized.
     Route::get('/api/groups/{group}', [GroupController::class, 'show']);
