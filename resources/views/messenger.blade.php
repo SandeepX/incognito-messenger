@@ -79,7 +79,7 @@
                 <input id="chat-search" type="text" autocomplete="off" placeholder="Search chats" aria-label="Search chats">
             </div>
 
-            <section class="notes-strip" aria-label="Notes">
+            <section id="notes-strip" class="notes-strip" aria-label="Notes">
                 <div id="notes-list" class="notes-list">
                     <div class="skeleton-notes" aria-hidden="true">
                         <span class="skeleton circle"></span><span class="skeleton circle"></span><span class="skeleton circle"></span><span class="skeleton circle"></span>
@@ -323,16 +323,21 @@
 
 <!-- Note editor / viewer -->
 <div id="note-modal" class="backdrop">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="note-modal-title">
         <div class="row-between"><h2 id="note-modal-title">Your note</h2>
             <button class="icon-btn" type="button" data-close="note-modal" aria-label="Close">✕</button>
         </div>
         <div id="note-author" class="member-row" hidden></div>
-        <textarea id="note-content" maxlength="60" rows="3" placeholder="A short note — up to 60 characters, gone after 24 hours"></textarea>
+        <label class="sr-only" for="note-content">Your note</label>
+        <textarea id="note-content" maxlength="60" rows="3" placeholder="A short note — up to 60 characters, gone after 24 hours" aria-describedby="note-helper note-counter"></textarea>
+        <div class="note-meta">
+            <span id="note-helper">Visible to friends for 24 hours</span>
+            <span id="note-counter">0/60</span>
+        </div>
         <div class="modal-actions">
-            <button id="note-save-btn" class="btn primary" type="button">Save note</button>
-            <button id="note-delete-btn" class="btn danger" type="button" hidden>Delete note</button>
-            <button class="btn" type="button" data-close="note-modal">Close</button>
+            <button id="note-save-btn" class="btn primary" type="button">Share</button>
+            <button id="note-delete-btn" class="btn danger" type="button" hidden>Delete</button>
+            <button class="btn" type="button" data-close="note-modal">Cancel</button>
         </div>
     </div>
 </div>

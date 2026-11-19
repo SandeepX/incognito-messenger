@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NoteChanged;
 use App\Models\Note;
 use App\Support\Notifier;
 use Illuminate\Http\JsonResponse;
@@ -80,6 +81,7 @@ class NoteController extends Controller
 
         $note->load(['user.profile', 'user.activeNote']);
         $this->notifyFriends('note_posted', $note);
+        broadcast(new NoteChanged((int) auth()->id(), 'posted', (int) $note->id));
 
         return response()->json($this->payload($note), 201);
     }
@@ -98,6 +100,7 @@ class NoteController extends Controller
         ]);
         $note->load(['user.profile', 'user.activeNote']);
         $this->notifyFriends('note_updated', $note);
+        broadcast(new NoteChanged((int) auth()->id(), 'updated', (int) $note->id));
 
         return response()->json($this->payload($note));
     }
@@ -108,7 +111,9 @@ class NoteController extends Controller
 
         $note->loadMissing(['user.profile', 'user.activeNote']);
         $wasVisible = true;
+        $noteId = (int) $note->id;
         $note->delete();
+        broadcast(new NoteChanged((int) auth()->id(), 'deleted', $noteId));
         $this->notifyFriends('note_deleted', $note, $wasVisible);
 
         return response()->json(['status' => 'deleted']);

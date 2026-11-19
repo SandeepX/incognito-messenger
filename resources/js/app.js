@@ -855,7 +855,8 @@ function activateRequestsSubTab(name, opts = {}) {
 async function loadNotes() {
     try {
         const page = await api('/api/notes');
-        state.notes = Array.isArray(page) ? page : (page.data ?? []);
+        const items = Array.isArray(page) ? page : (page.data ?? []);
+        state.notes = items.filter(isActiveNote);
         state.notesLoaded = true;
         renderNotes();
     } catch (error) {
@@ -865,39 +866,124 @@ async function loadNotes() {
     }
 }
 
+const NOTE_MAX_LENGTH = 60;
+let notesExpiryTimer = null;
+
+function isActiveNote(note) {
+    if (!note) return false;
+    const expiresAt = Date.parse(note.expires_at || '');
+    return !Number.isFinite(expiresAt) || expiresAt > Date.now();
+}
+
+/** Re-render when a note crosses its 24h expiry, without a page reload. */
+function scheduleNotesExpiry() {
+    clearTimeout(notesExpiryTimer);
+
+    const now = Date.now();
+    const soonest = state.notes
+        .map((note) => Date.parse(note.expires_at || ''))
+        .filter((time) => Number.isFinite(time) && time > now)
+        .sort((a, b) => a - b)[0];
+
+    const delay = soonest ? Math.min(soonest - now + 300, 60000) : 60000;
+    notesExpiryTimer = setTimeout(() => {
+        if (state.notes.some((note) => !isActiveNote(note))) {
+            renderNotes();
+            loadConversations();
+        } else {
+            scheduleNotesExpiry();
+        }
+    }, Math.max(delay, 1000));
+}
+
+/** Show soft fade edges only while the row is horizontally scrollable. */
+function updateNotesScrollState() {
+    const strip = $('notes-strip');
+    const list = $('notes-list');
+    if (!strip || !list) return;
+
+    const max = list.scrollWidth - list.clientWidth;
+    const scrollable = max > 1;
+    strip.classList.toggle('is-scrollable', scrollable);
+
+    if (!scrollable) {
+        strip.classList.remove('fade-left', 'fade-right');
+        return;
+    }
+
+    strip.classList.toggle('fade-left', list.scrollLeft > 2);
+    strip.classList.toggle('fade-right', list.scrollLeft < max - 2);
+}
+
+function noteAriaLabel(note, name) {
+    return note.is_mine
+        ? `Your note: ${note.content}`
+        : `${name}’s note: ${note.content}`;
+}
+
+/** Single reusable item used for both my note and friends' notes. */
+function noteItemHtml(note, user, isMine) {
+    const name = user.name || 'Friend';
+    const label = isMine
+        ? (note ? `Your note: ${note.content}` : 'Add your note')
+        : noteAriaLabel(note, name);
+    const title = isMine ? (note ? 'Edit your note' : 'Add your note') : label;
+    const attrs = isMine
+        ? 'data-note-action="add"'
+        : `data-note-id="${note.id}" data-note-user="${user.id ?? ''}"`;
+    const plus = isMine && !note
+        ? '<span class="note-plus" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>'
+        : '';
+
+    return `
+        <button class="note-item" type="button" ${attrs}
+                title="${esc(title)}" aria-label="${esc(label)}">
+            <span class="note-visual">
+                <span class="note-bubble-wrap" aria-hidden="true">
+                    <span class="note-bubble">${esc(note ? note.content : 'Add note')}</span>
+                    <span class="note-tail"></span>
+                </span>
+                ${avatarImg(user.avatar, name, user.username, '', '')}
+                ${plus}
+            </span>
+            <span class="note-name">${esc(isMine ? 'Your note' : name.split(' ')[0])}</span>
+        </button>`;
+}
+
 function renderNotes() {
     const box = $('notes-list');
     if (!box) return;
-    const mine = state.notes.find((n) => n.is_mine);
-    const others = state.notes.filter((n) => !n.is_mine);
 
-    let html = '';
-    // "+ Add note" first (my note)
-    const addLabel = mine ? esc(mine.content) : 'Add note';
-    const addName = 'Your note';
-    html += `
-        <button class="note-item" type="button" data-note-action="add" title="${mine ? 'Edit your note' : 'Add a note'}" aria-label="${mine ? 'Edit your note' : 'Add a note'}">
-            <span class="note-visual">
-                ${mine ? `<span class="note-bubble">${esc(mine.content)}</span>` : ''}
-                ${avatarImg(state.me.avatar, state.me.name, state.me.username, '', '')}
-                ${!mine ? `<span class="note-plus" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>` : ''}
-            </span>
-            <span class="note-name">${mine ? 'You' : 'Add note'}</span>
-        </button>`;
+    state.notes = state.notes.filter(isActiveNote);
 
+    const mine = state.notes.find((note) => note.is_mine) || null;
+    const others = state.notes
+        .filter((note) => !note.is_mine)
+        .sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
+
+    // My item is always first so there is always a way to add or edit a note.
+    let html = noteItemHtml(mine, state.me, true);
     others.forEach((note) => {
-        const u = note.user || {};
-        html += `
-            <button class="note-item" type="button" data-note-id="${note.id}" data-note-user="${u.id ?? ''}" title="${esc(u.name ?? 'Note')}" aria-label="${esc(u.name ?? 'Note')}’s note">
-                <span class="note-visual">
-                    <span class="note-bubble">${esc(note.content)}</span>
-                    ${avatarImg(u.avatar, u.name, u.username, '', '')}
-                </span>
-                <span class="note-name">${esc((u.name || '').split(' ')[0] || 'Friend')}</span>
-            </button>`;
+        html += noteItemHtml(note, note.user || {}, false);
     });
 
     box.innerHTML = html;
+    box.scrollLeft = Math.min(box.scrollLeft, Math.max(0, box.scrollWidth - box.clientWidth));
+    updateNotesScrollState();
+    scheduleNotesExpiry();
+}
+
+function updateNoteCounter() {
+    const input = $('note-content');
+    const counter = $('note-counter');
+    if (!input || !counter) return;
+
+    counter.textContent = `${input.value.length}/${NOTE_MAX_LENGTH}`;
+
+    const saveBtn = $('note-save-btn');
+    if (saveBtn && !saveBtn.hidden) {
+        saveBtn.disabled = !input.value.trim();
+    }
 }
 
 function openNoteEditor(note = null) {
@@ -906,10 +992,17 @@ function openNoteEditor(note = null) {
     $('note-content').value = note?.content ?? '';
     $('note-content').readOnly = false;
     $('note-save-btn').hidden = false;
+    $('note-save-btn').disabled = false;
+    $('note-save-btn').textContent = note ? 'Edit' : 'Share';
     $('note-delete-btn').hidden = !note;
+    $('note-delete-btn').disabled = false;
+    $('note-delete-btn').textContent = 'Delete';
     $('note-author').hidden = true;
+    updateNoteCounter();
     $('note-modal').classList.add('show');
     $('note-content').focus();
+    const end = $('note-content').value.length;
+    $('note-content').setSelectionRange(end, end);
 }
 
 function openNoteViewer(note) {
@@ -924,14 +1017,24 @@ function openNoteViewer(note) {
     $('note-author').innerHTML = `
         ${avatarImg(u.avatar, u.name, u.username, 'sm')}
         <span class="who">${esc(u.name ?? '')}<small>@${esc(u.username ?? '')} · ${esc(note.time ?? '')}</small></span>`;
+    updateNoteCounter();
     $('note-modal').classList.add('show');
 }
 
 async function saveNote() {
-    const content = $('note-content').value.trim();
+    const input = $('note-content');
+    const content = input.value.trim();
     if (!content) { toast('Write a short note first.'); return; }
+
+    const editing = Boolean(state.activeNote);
+    const btn = $('note-save-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = editing ? 'Saving…' : 'Sharing…';
+    }
+
     try {
-        if (state.activeNote) {
+        if (editing) {
             await api(`/api/notes/${state.activeNote.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -944,24 +1047,37 @@ async function saveNote() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content }),
             });
-            toast('Note added.');
+            toast('Note shared.');
         }
         $('note-modal').classList.remove('show');
         await Promise.all([loadNotes(), loadConversations()]);
     } catch (error) {
         toast(error.message);
+    } finally {
+        if (btn) btn.textContent = editing ? 'Edit' : 'Share';
+        updateNoteCounter();
     }
 }
 
 async function deleteNote() {
     if (!state.activeNote) return;
+
+    const btn = $('note-delete-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Deleting…';
+    }
+
     try {
         await api(`/api/notes/${state.activeNote.id}`, { method: 'DELETE' });
+        state.activeNote = null;
         $('note-modal').classList.remove('show');
         toast('Note deleted.');
         await Promise.all([loadNotes(), loadConversations()]);
     } catch (error) {
         toast(error.message);
+    } finally {
+        if (btn) btn.textContent = 'Delete';
     }
 }
 
@@ -1054,7 +1170,13 @@ function maybeMarkActiveConversationSeen() {
 
 window.addEventListener('focus', maybeMarkActiveConversationSeen);
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') maybeMarkActiveConversationSeen();
+    if (document.visibilityState !== 'visible') return;
+    maybeMarkActiveConversationSeen();
+    // Background timers are throttled, so prune expired notes on return.
+    if (state.notes.some((note) => !isActiveNote(note))) {
+        renderNotes();
+        loadConversations();
+    }
 });
 
 function conversationPreviewText(c) {
@@ -2889,7 +3011,7 @@ function bindEvents() {
     // Notes
     $('notes-list')?.addEventListener('click', async (event) => {
         const addBtn = event.target.closest('[data-note-action="add"]');
-        if (addBtn) { openNoteEditor(state.notes.find((n) => n.is_mine) || null); return; }
+        if (addBtn) { openNoteEditor(state.notes.find((n) => n.is_mine && isActiveNote(n)) || null); return; }
         const noteBtn = event.target.closest('[data-note-id]');
         if (!noteBtn) return;
         const note = state.notes.find((n) => String(n.id) === String(noteBtn.dataset.noteId));
@@ -2913,6 +3035,14 @@ function bindEvents() {
     });
     $('note-save-btn')?.addEventListener('click', saveNote);
     $('note-delete-btn')?.addEventListener('click', deleteNote);
+    $('note-content')?.addEventListener('input', updateNoteCounter);
+    $('notes-list')?.addEventListener('scroll', updateNotesScrollState, { passive: true });
+    window.addEventListener('resize', updateNotesScrollState);
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && $('note-modal')?.classList.contains('show')) {
+            $('note-modal').classList.remove('show');
+        }
+    });
 
     // Find friends modal
     $('friend-search')?.addEventListener('input', debounce((e) => searchFindFriends(e.target.value.trim()), 250));
@@ -3232,6 +3362,10 @@ window.Echo.private(`user.${state.me.id}`)
             const row = document.querySelector(`[data-notification-id="${event.notification_id}"]`);
             if (row) markNotificationRowRead(row);
         }
+    })
+    .listen('.NoteChanged', () => {
+        // My note changed in another tab/device.
+        loadNotes();
     });
 
 window.Echo.connector.pusher.connection.bind('state_change', (states) => {
@@ -3240,6 +3374,7 @@ window.Echo.connector.pusher.connection.bind('state_change', (states) => {
     if (states.current === 'connected' && states.previous !== 'connected') {
         loadConversations();
         loadPresence();
+        loadNotes();
     }
 });
 
