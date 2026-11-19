@@ -52,15 +52,23 @@ class ProfileTest extends TestCase
             'show_active_status' => 1,
         ]);
 
-        $payload = [
+        $this->actingAs($user)->put('/profile', [
             'name' => $user->name,
             'username' => 'settings',
             'email' => $user->email,
-            'message_sounds' => '0',
             'show_active_status' => '0',
-        ];
+        ])->assertRedirect();
 
-        $this->actingAs($user)->put('/profile', $payload)->assertRedirect();
+        $this->assertDatabaseHas('user_profiles', [
+            'user_id' => $user->id,
+            'message_sounds' => 1,
+            'show_active_status' => 0,
+        ]);
+
+        // Message sounds live on the dedicated notification-settings endpoint.
+        $this->actingAs($user)->postJson('/api/settings/notifications', [
+            'message_sounds' => false,
+        ])->assertOk()->assertJsonPath('message_sounds', false);
 
         $this->assertDatabaseHas('user_profiles', [
             'user_id' => $user->id,
@@ -68,10 +76,9 @@ class ProfileTest extends TestCase
             'show_active_status' => 0,
         ]);
 
-        $this->actingAs($user)->put('/profile', [
-            ...$payload,
-            'message_sounds' => '1',
-        ])->assertRedirect();
+        $this->actingAs($user)->postJson('/api/settings/notifications', [
+            'message_sounds' => true,
+        ])->assertOk();
 
         $this->assertDatabaseHas('user_profiles', [
             'user_id' => $user->id,

@@ -174,13 +174,13 @@ Browser ──HTTP──► Controllers ──Gate/policy──► Database / Mi
 
 ```bash
 # PHP tests (in-memory SQLite + Storage::fake('minio'); no Docker required)
-php artisan test
+composer test
 
 # Frontend production build
 npm run build
 
 # Inside Docker
-docker compose exec app php artisan test
+docker compose exec app composer test
 docker compose exec app php artisan migrate:status
 docker compose exec app php artisan storage:prune-orphaned-files --dry-run
 docker compose logs -f reverb
@@ -190,6 +190,35 @@ docker compose logs -f minio
 `storage:prune-orphaned-files` only scans application-owned prefixes (`avatars/` and `conversations/`) and removes objects that no profile, group or message attachment references. Run with `--dry-run` first. Failed uploads are cleaned up immediately in the request; the command catches other orphans (for example, from an interrupted deploy).
 
 Tests cover registration/login, profile and avatar validation, direct-chat privacy, friend requests, message requests, rejection/cancellation, notes/expiry/visibility, read receipts (including groups and pagination), MinIO attachment authorization, realtime event/channel rules, notifications, group management, audio-call signaling/state/history, cascades, storage pruning and schema indexes.
+
+## Testing
+
+The suite uses [Pest](https://pestphp.com) on top of PHPUnit. Feature tests run with `RefreshDatabase` against an in-memory SQLite database, `BROADCAST_CONNECTION=null`, and the array cache/session/mail drivers, so no development database or Reverb server is touched. External effects are faked (`Event::fake`, `Storage::fake('minio')`, `Notification::fake`, `Carbon::setTestNow`).
+
+```bash
+# Run the whole suite
+composer test
+
+# Run one file
+./vendor/bin/pest tests/Feature/UnsendPestTest.php
+
+# Run one test by name
+./vendor/bin/pest --filter="rejects delete for everyone"
+
+# Run a group (Pest describe block)
+./vendor/bin/pest --filter="delete for me"
+
+# Pint: check style (fails on violations) or fix it
+composer lint
+composer format
+
+# Both style and tests
+composer check
+```
+
+Coverage requires Xdebug or PCOV (`php -m | grep -E 'xdebug|pcov'`). Neither is installed in this environment, so no `test:coverage` script is defined. Once a driver is available, use `./vendor/bin/pest --coverage --min=60`.
+
+An optional pre-commit hook formats staged PHP files with Pint. Enable it per clone with `git config core.hooksPath .githooks`; disable it with `git config --unset core.hooksPath`.
 
 ## Notes
 

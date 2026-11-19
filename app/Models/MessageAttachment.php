@@ -3,11 +3,14 @@
 namespace App\Models;
 
 use App\Support\AttachmentUpload;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MessageAttachment extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'message_id', 'original_filename', 'storage_path',
         'mime_type', 'file_size', 'attachment_type',

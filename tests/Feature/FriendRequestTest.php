@@ -26,9 +26,9 @@ class FriendRequestTest extends TestCase
 
         $incoming = $this->actingAs($bob)->getJson('/api/friends')->assertOk()->json();
         $this->assertSame(1, $incoming['counts']['incoming']);
-        $this->assertSame($alice->id, $incoming['incoming']['data'][0]['user']['id']);
+        $this->assertSame($alice->id, $incoming['incoming'][0]['user']['id']);
 
-        $requestId = $incoming['incoming']['data'][0]['id'];
+        $requestId = $incoming['incoming'][0]['id'];
         $this->actingAs($alice)->postJson("/api/friends/{$requestId}/accept")->assertForbidden();
 
         $this->actingAs($bob)->postJson("/api/friends/{$requestId}/accept")
@@ -42,7 +42,7 @@ class FriendRequestTest extends TestCase
 
         $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
         $this->assertSame(1, $friends['counts']['friends']);
-        $this->assertSame($alice->id, $friends['friends']['data'][0]['id']);
+        $this->assertSame($alice->id, $friends['friends'][0]['id']);
     }
 
     public function test_requests_can_be_rejected_cancelled_and_friends_removed(): void
@@ -88,10 +88,10 @@ class FriendRequestTest extends TestCase
         ]);
 
         $incoming = $this->actingAs($bob)->getJson('/api/friends')->json();
-        $this->assertSame('Hey Bob, it is Alice!', $incoming['incoming']['data'][0]['note']);
+        $this->assertSame('Hey Bob, it is Alice!', $incoming['incoming'][0]['note']);
 
         $outgoing = $this->actingAs($alice)->getJson('/api/friends')->json();
-        $this->assertSame('Hey Bob, it is Alice!', $outgoing['outgoing']['data'][0]['note']);
+        $this->assertSame('Hey Bob, it is Alice!', $outgoing['outgoing'][0]['note']);
 
         // A blank note is allowed and stored as null.
         $requestId = FriendRequest::first()->id;

@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MessageRequest extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'sender_id', 'recipient_id', 'conversation_id', 'pair_key',
         'body', 'status', 'seen_at', 'responded_at',

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# Optional pre-commit hook: run Laravel Pint on staged PHP files.
+#
+# Enable it once per clone with:
+#   git config core.hooksPath .githooks
+#
+# Disable it again with:
+#   git config --unset core.hooksPath
+#
+# Pint rewrites the staged files; re-add them so the formatted version is
+# included in the commit. The hook never crashes the commit on its own.
+
+set -euo pipefail
+
+mapfile -t files < <(git diff --cached --name-only --diff-filter=ACMR -- '*.php')
+
+if [ ${#files[@]} -eq 0 ]; then
+    exit 0
+fi
+
+if [ ! -x vendor/bin/pint ]; then
+    echo "Pint is not installed; skipping formatting."
+    exit 0
+fi
+
+./vendor/bin/pint "${files[@]}"
+
+git add -- "${files[@]}"

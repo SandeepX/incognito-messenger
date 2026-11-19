@@ -39,7 +39,7 @@ class NoteTest extends TestCase
             'body' => 'Hi Eve',
         ])->assertCreated();
         $requests = $this->actingAs($eve)->getJson('/api/message-requests')->json();
-        $requestUser = collect($requests['incoming']['data'])->firstWhere('user.id', $alice->id)['user'];
+        $requestUser = collect($requests['incoming'])->firstWhere('user.id', $alice->id)['user'];
         $this->assertFalse($requestUser['has_note']);
         $this->assertNull($requestUser['note']);
 
@@ -56,7 +56,7 @@ class NoteTest extends TestCase
 
         // Friends see the actual text in every place that renders the avatar.
         $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
-        $friendRow = collect($friends['friends']['data'])->firstWhere('id', $alice->id);
+        $friendRow = collect($friends['friends'])->firstWhere('id', $alice->id);
         $this->assertTrue($friendRow['has_note']);
         $this->assertSame('Coffee at 3pm?', $friendRow['note']);
 
@@ -95,7 +95,7 @@ class NoteTest extends TestCase
         $this->assertDatabaseCount('notes', 0);
 
         $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
-        $this->assertFalse(collect($friends['friends']['data'])->firstWhere('id', $alice->id)['has_note']);
+        $this->assertFalse(collect($friends['friends'])->firstWhere('id', $alice->id)['has_note']);
     }
 
     public function test_expired_notes_are_hidden_even_for_the_owner(): void
@@ -116,7 +116,7 @@ class NoteTest extends TestCase
 
         // An expired note must not leave a cloud marker on the avatar either.
         $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
-        $this->assertFalse(collect($friends['friends']['data'])->firstWhere('id', $alice->id)['has_note']);
+        $this->assertFalse(collect($friends['friends'])->firstWhere('id', $alice->id)['has_note']);
     }
 
     public function test_note_content_is_validated(): void

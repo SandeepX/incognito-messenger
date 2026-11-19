@@ -43,7 +43,7 @@ class UnsendMessageTest extends TestCase
         $messageId = $this->send($alice, $conversationId, 'Secret text');
 
         $response = $this->actingAs($alice)
-            ->postJson("/api/messages/{$messageId}/unsend")
+            ->postJson("/api/messages/{$messageId}/unsend", ['mode' => 'everyone'])
             ->assertOk()
             ->assertJsonPath('mode', 'everyone')
             ->assertJsonPath('message.is_unsent', true)
@@ -98,9 +98,9 @@ class UnsendMessageTest extends TestCase
         ]);
 
         $response = $this->actingAs($alice)
-            ->postJson("/api/messages/{$messageId}/unsend")
+            ->postJson("/api/messages/{$messageId}/unsend", ['mode' => 'me'])
             ->assertOk()
-            ->assertJsonPath('mode', 'local')
+            ->assertJsonPath('mode', 'me')
             ->json();
 
         $this->assertSame([$alice->id], $response['hidden_for']);
@@ -111,8 +111,8 @@ class UnsendMessageTest extends TestCase
         ]);
         $this->assertContains($alice->id, Message::findOrFail($messageId)->deleted_for);
 
-        Event::assertDispatched(MessageUnsent::class, fn (MessageUnsent $event) => $event->mode === 'local'
-            && $event->hiddenFor === [$alice->id]);
+        // Local deletes never announce an event to the other participant.
+        Event::assertNotDispatched(MessageUnsent::class);
 
         $aliceHistory = $this->actingAs($alice)->getJson("/api/conversations/{$conversationId}")->assertOk()->json();
         $this->assertCount(0, $aliceHistory['data']);
@@ -134,7 +134,7 @@ class UnsendMessageTest extends TestCase
         $messageId = $this->send($alice, $conversationId, 'Hands off');
 
         $this->actingAs($bob)
-            ->postJson("/api/messages/{$messageId}/unsend")
+            ->postJson("/api/messages/{$messageId}/unsend", ['mode' => 'everyone'])
             ->assertForbidden();
 
         $this->assertDatabaseHas('messages', [
@@ -151,7 +151,7 @@ class UnsendMessageTest extends TestCase
         $alice = $this->userWithProfile('alice');
         $bob = $this->userWithProfile('bob');
         $conversationId = $this->conversation($alice, $bob);
-        $messageId = $this->send($alice, $conversationId, '');
+        $messageId = $this->send($alice, $conversationId, 'See attached');
 
         $path = "conversations/{$conversationId}/files/secret.txt";
         Storage::disk('minio')->put($path, 'private bytes');
@@ -164,7 +164,7 @@ class UnsendMessageTest extends TestCase
             'attachment_type' => 'file',
         ]);
 
-        $this->actingAs($alice)->postJson("/api/messages/{$messageId}/unsend")->assertOk();
+        $this->actingAs($alice)->postJson("/api/messages/{$messageId}/unsend", ['mode' => 'everyone'])->assertOk();
 
         $this->assertDatabaseMissing('message_attachments', ['message_id' => $messageId]);
         Storage::disk('minio')->assertMissing($path);

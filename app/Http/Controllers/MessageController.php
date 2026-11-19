@@ -13,6 +13,7 @@ use App\Models\MessageAttachment;
 use App\Models\MessageRead;
 use App\Support\AttachmentUpload;
 use App\Support\UnreadCounter;
+use App\Support\UnsendPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,10 @@ class MessageController extends Controller
 
         $data = $request->validate([
             'body' => [
-                'nullable', 'string', 'max:2000',
+                // TrimStrings turns a whitespace-only body into null, which
+                // makes "nullable" skip the closure below. Require a body
+                // unless files were attached so blank messages are rejected.
+                'required_without:attachments', 'nullable', 'string', 'max:2000',
                 function ($attribute, $value, $fail) use ($request) {
                     if ((! is_string($value) || trim($value) === '') && ! $request->hasFile('attachments')) {
                         $fail('Write a message or attach a file.');
@@ -134,7 +138,7 @@ class MessageController extends Controller
                 abort_unless(
                     (int) $locked->sender_id === $me,
                     403,
-                    'Only the sender can delete a message for everyone.'
+                    UnsendPolicy::NOT_SENDER
                 );
 
                 // Idempotent: a retried request is harmless, but do not send
@@ -147,10 +151,10 @@ class MessageController extends Controller
                     ->where('user_id', '!=', $locked->sender_id)
                     ->exists();
 
-                abort_if(
-                    $seen,
+                abort_unless(
+                    UnsendPolicy::canDeleteForEveryone(true, $seen),
                     422,
-                    'Seen messages can only be deleted for you.'
+                    UnsendPolicy::SEEN_MESSAGE
                 );
 
                 // Collect private media here; remove it from MinIO only after
