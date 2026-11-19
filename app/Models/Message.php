@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Support\CallService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Message extends Model
 {
@@ -26,27 +28,27 @@ class Message extends Model
         'deleted_for' => 'array',
     ];
 
-    public function conversation(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function conversation(): BelongsTo
     {
         return $this->belongsTo(Conversation::class);
     }
 
-    public function sender(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
     }
 
-    public function reads(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function reads(): HasMany
     {
         return $this->hasMany(MessageRead::class);
     }
 
-    public function attachments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function attachments(): HasMany
     {
         return $this->hasMany(MessageAttachment::class);
     }
 
-    public function call(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function call(): BelongsTo
     {
         return $this->belongsTo(Call::class);
     }

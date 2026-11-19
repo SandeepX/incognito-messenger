@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -55,7 +56,7 @@ class SchemaTest extends TestCase
 
     private function hasUniqueIndex(string $table, string $index): bool
     {
-        return collect(\Illuminate\Support\Facades\DB::select("PRAGMA index_list('{$table}')"))
+        return collect(DB::select("PRAGMA index_list('{$table}')"))
             ->firstWhere('name', $index) !== null;
     }
 }

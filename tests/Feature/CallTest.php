@@ -6,6 +6,7 @@ use App\Events\CallEvent;
 use App\Models\Call;
 use App\Models\Message;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\CreatesUsers;
 use Tests\TestCase;
@@ -443,7 +444,7 @@ class CallTest extends TestCase
         // route callbacks: users.* is self-only, call.* is participant-only.
         // Tests use the null broadcaster, so inspect the registered callbacks
         // directly instead of hitting /broadcasting/auth over HTTP.
-        $channels = \Illuminate\Support\Facades\Broadcast::driver()->getChannels();
+        $channels = Broadcast::driver()->getChannels();
         $userRule = $channels['users.{id}'];
         $callRule = $channels['call.{callId}'];
 

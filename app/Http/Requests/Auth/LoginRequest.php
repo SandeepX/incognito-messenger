@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Auth;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\ValidationException;
 
 class LoginRequest extends FormRequest
 {
@@ -44,7 +45,7 @@ class LoginRequest extends FormRequest
 
     private function throwValidationExceptionWithMessage(string $field, string $message): never
     {
-        throw \Illuminate\Validation\ValidationException::withMessages([
+        throw ValidationException::withMessages([
             $field => $message,
         ]);
     }

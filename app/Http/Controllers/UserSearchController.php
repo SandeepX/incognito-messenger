@@ -75,6 +75,7 @@ class UserSearchController extends Controller
         if ($findFriends) {
             $results = $results->filter(function (array $row) use ($me, $users) {
                 $target = $users->firstWhere('id', $row['id']);
+
                 return $target ? $target->canReceiveMessageRequestFrom($me) : false;
             })->values();
         }

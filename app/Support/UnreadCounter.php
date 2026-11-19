@@ -10,7 +10,7 @@ class UnreadCounter
      * Unread message counts per conversation for one user, in a single
      * grouped query (no per-conversation round trips).
      *
-     * @return array<int, int>  conversation_id => unread count
+     * @return array<int, int> conversation_id => unread count
      */
     public static function for(int $userId): array
     {

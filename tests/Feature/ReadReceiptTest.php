@@ -3,8 +3,6 @@
 namespace Tests\Feature;
 
 use App\Events\MessageSeen;
-use App\Models\Conversation;
-use App\Models\Message;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\CreatesUsers;

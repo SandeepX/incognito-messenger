@@ -10,7 +10,6 @@ use App\Models\MessageRead;
 use App\Models\User;
 use App\Support\UnreadCounter;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller

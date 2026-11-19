@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MessageRead extends Model
 {
@@ -10,12 +11,12 @@ class MessageRead extends Model
 
     protected $casts = ['read_at' => 'datetime'];
 
-    public function message(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function message(): BelongsTo
     {
         return $this->belongsTo(Message::class);
     }
 
-    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }

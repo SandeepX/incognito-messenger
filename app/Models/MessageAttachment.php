@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\AttachmentUpload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -20,7 +21,7 @@ class MessageAttachment extends Model
     /** Safe filename for Content-Disposition headers. */
     public function safeName(): string
     {
-        return \App\Support\AttachmentUpload::safeFilename($this->original_filename);
+        return AttachmentUpload::safeFilename($this->original_filename);
     }
 
     /** Human-readable size for the UI. */

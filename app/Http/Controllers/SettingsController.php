@@ -9,7 +9,6 @@ use App\Http\Requests\Profile\ProfileUpdateRequest;
 use App\Models\User;
 use App\Models\UserBlock;
 use App\Models\UserProfile;
-use App\Support\AvatarUpload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,7 +16,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -225,6 +223,7 @@ class SettingsController extends Controller
     public function unblock(Request $request, User $user): JsonResponse
     {
         $request->user()->blocks()->where('blocked_id', $user->id)->delete();
+
         return response()->json(['ok' => true]);
     }
 
@@ -235,6 +234,7 @@ class SettingsController extends Controller
             'blocker_id' => $request->user()->id,
             'blocked_id' => $user->id,
         ]);
+
         return response()->json(['ok' => true]);
     }
 
@@ -309,12 +309,14 @@ class SettingsController extends Controller
         $user = $request->user();
         if ($user->hasVerifiedEmail()) {
             $payload = ['ok' => true, 'message' => 'Email is already verified.'];
+
             return $request->expectsJson() ? response()->json($payload) : back()->with('status', $payload['message']);
         }
 
         $user->sendEmailVerificationNotification();
 
         $payload = ['ok' => true, 'message' => 'Verification email sent.'];
+
         return $request->expectsJson() ? response()->json($payload) : back()->with('status', $payload['message']);
     }
 
@@ -327,12 +329,14 @@ class SettingsController extends Controller
         if (! $profile->exists) {
             $profile->user_id = $user->id;
         }
+
         return $profile;
     }
 
     private function userPayload(User $user): array
     {
         $user->loadMissing('profile');
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -400,7 +404,10 @@ class SettingsController extends Controller
             'Android' => '/Android/i',
             'Linux' => '/Linux/i',
         ] as $name => $pattern) {
-            if (preg_match($pattern, $ua)) { $platform = $name; break; }
+            if (preg_match($pattern, $ua)) {
+                $platform = $name;
+                break;
+            }
         }
 
         $browser = 'Browser';
@@ -411,13 +418,16 @@ class SettingsController extends Controller
             'Firefox' => '/Firefox\//i',
             'Safari' => '/Safari\//i',
         ] as $name => $pattern) {
-            if (preg_match($pattern, $ua)) { $browser = $name; break; }
+            if (preg_match($pattern, $ua)) {
+                $browser = $name;
+                break;
+            }
         }
 
         $type = (preg_match('/Mobile|Android|iPhone/i', $ua) && ! preg_match('/iPad/i', $ua)) ? 'Mobile' : (preg_match('/iPad|Tablet/i', $ua) ? 'Tablet' : 'Desktop');
 
         return [
-            'device' => $platform . ' · ' . $browser . ' · ' . $type,
+            'device' => $platform.' · '.$browser.' · '.$type,
             'browser' => $browser,
             'platform' => $platform,
         ];
