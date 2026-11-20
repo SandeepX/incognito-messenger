@@ -1,4 +1,4 @@
-# Incognito MessengerA real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel Echo** and **MinIO**. It supports registration/login, profiles, friend requests, message requests, direct and group chats, read receipts, private file sharing, 1-to-1 audio calls, 24-hour notes, notifications, last-active presence, blocking, message sounds, unsend and a responsive Messenger-style UI. Every HTTP request and WebSocket subscription is authorized on the backend.
+## Incognito Messenger A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel Echo** and **MinIO**. It supports registration/login, profiles, friend requests, message requests, direct and group chats, read receipts, private file sharing, 1-to-1 audio calls, 24-hour notes, notifications, last-active presence, blocking, message sounds, unsend and a responsive Messenger-style UI. Every HTTP request and WebSocket subscription is authorized on the backend.
 
 ## Features
 
