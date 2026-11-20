@@ -1,23 +1,22 @@
-# Incognito Messenger
-
-A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel Echo** and **MinIO**. It supports registration/login, profiles, friend requests, message requests, direct and group chats, read receipts, private file sharing, 24-hour notes, notifications, last-active presence, message sounds, unsend and a Messenger-style UI. Every HTTP request and WebSocket subscription is authorized on the backend.
+# Incognito MessengerA real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel Echo** and **MinIO**. It supports registration/login, profiles, friend requests, message requests, direct and group chats, read receipts, private file sharing, 1-to-1 audio calls, 24-hour notes, notifications, last-active presence, blocking, message sounds, unsend and a responsive Messenger-style UI. Every HTTP request and WebSocket subscription is authorized on the backend.
 
 ## Features
 
 - **Accounts & profiles** — registration, login/logout, throttling, editable name/email/username/bio/status and avatars.
-- **Friend graph** — send/accept/reject/cancel friend requests with an optional note; only accepted friends appear in the Friends section and may start a normal direct chat. One pending request per pair.
-- **Message requests** — non-friends can send a short introduction with one message. The thread is hidden from normal chat lists until the recipient accepts; accepting also creates the friendship. The recipient alone can delete an incoming request; the sender alone can cancel one.
-- **Direct & group messages** — one conversation per pair, cursor-paginated history, latest-message previews, unread badges, typing whispers and presence.
+- **Friend graph** — send/accept/reject/cancel friend requests with an optional note, with undo for accept/reject/cancel; only accepted friends appear in the Friends tab and may start a normal direct chat. One pending request per pair.
+- **Message requests** — non-friends can send a short introduction with one message. The thread is hidden from normal chat lists until the recipient accepts; accepting also creates the friendship. The recipient can accept, delete (optionally undo), block the sender or report/dismiss the request; the sender can cancel or undo a cancellation.
+- **Direct & group messages** — one conversation per pair, cursor-paginated history, latest-message previews, unread badges, typing whispers and presence; groups support creation, member add/remove, leaving and creator deletion.
 - **Read receipts** — one grey tick for Sent, two blue ticks for Seen. A `message_reads` row is written only when a recipient actually opens the thread (never from a websocket receipt alone). Group messages show every reader, and receipts are included in every paginated message payload.
 - **Last-active presence** — green dot for “Active now”, relative text for recent visits, nothing after seven days. A 30-second heartbeat and socket connect/disconnect events persist `users.last_active_at`; the **Show active status** profile toggle hides both presence and the timestamp.
 - **Message sounds** — optional, on by default. A subtle tone plays for incoming messages (not for the focused chat, background-safe and deduplicated against your own socket echo) and a quieter one on successful send. Toggle it in **Profile → Message sounds**.
 - **1-to-1 audio calls** — WebRTC audio-only calls between accepted friends: ringing/accept/decline/cancel, busy and offline handling, mute, live timer, connection quality, speaker selection, a floating call bar and call-history messages with **Call back** for missed calls. Signaling runs over private per-user Reverb channels; the server checks friendship, blocks, call policy and one-active-call-per-user before anything rings. STUN works out of the box; TURN is optional through environment variables. Settings include **Allow audio calls from**, a ringtone toggle, a microphone test and input/output device pickers.
-- **Unsend** — sender-only. Unseen messages become a shared “unsent a message” placeholder on both sides; seen messages are removed only from the sender’s view. The server decides at request time from `message_reads`, and Reverb pushes the decision immediately.
+- **Unsend / delete** — “delete for everyone” is sender-only and allowed only while the other side has not read the message; unseen messages become a shared “unsent a message” placeholder. Either participant can delete a message only for themselves. The server decides at request time from `message_reads`, and Reverb pushes the decision immediately.
 - **Private media & files** — images (JPEG/PNG/GIF/WebP) and documents (PDF, Word, Excel, TXT, CSV, ZIP) up to 20 MB each, max 5 per message. Everything is stored in a private MinIO bucket with generated names. Download/preview links are authorized by policy and stream through the app, so they work from localhost, a LAN address or a tunnel without exposing MinIO to the browser.
-- **Notes** — one active 60-character note per user, shown as a thought cloud in the notes strip and above avatars in Friends and Chats. Notes are visible only to the author and accepted friends, disappear after 24 hours, and can be edited or deleted anytime. Clicking a friend's note opens their chat.
-- **Realtime** — new messages, read receipts, friend/message request events, accepts, notes, unread counts, conversation-list changes and group changes are pushed over Reverb. Request and notification counters update without a refresh.
+- **Notes** — one active 60-character note per user, shown as a cloud in the sidebar notes strip, with a ring around the avatar in Friends and Chats. Notes are visible to the author and, when allowed by the owner's privacy setting, accepted friends; they disappear after 24 hours (the client prunes them live), sync across tabs/devices in realtime, and can be edited or deleted anytime. Clicking a friend's note opens their chat.
+- **Realtime** — new messages, read receipts, friend/message request events, accepts, note changes (including your own note across tabs), unread counts, conversation-list changes and group changes are pushed over Reverb. Request and notification counters update without a refresh.
+- **Settings & privacy** — light/dark/system theme, notification and message-sound preferences, read-receipt and active-status toggles, message-request and note-visibility policies, call policy and ringtone, blocked-user management, active-session revocation, email verification, password change and account deletion.
 - **Authorization** — policies plus `routes/channels.php` decide who may read, write, download or subscribe. Channel authorization is re-checked live for groups, so removed members lose access immediately.
-- **Responsive UI** — Chats stay in a fixed-height, scrollable left sidebar; the right panel has Friends and Requests tabs, with online/offline presence, chat/remove actions, friend requests, sent requests and message requests. It opens from the people icon. On small screens the right panel and an open chat become full-screen drilldowns. Includes an emoji picker, attachment progress/previews, an image lightbox and a notification center.
+- **Responsive UI** — a fixed-height left sidebar holds the notes strip plus Chats, Requests (received/sent) and Friends tabs, with live search, online/offline presence, unread badges and chat/remove actions. On small screens the sidebar and an open chat become full-screen drilldowns. Includes an emoji picker, attachment progress/previews, an image lightbox, a notification center and a dedicated settings page.
 
 ## Stack
 
@@ -26,7 +25,7 @@ A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel E
 | Laravel | 13.43 (PHP 8.4) |
 | Reverb | WebSocket server on port 8080 |
 | Echo + pusher-js | browser WebSocket client |
-| Vite + Tailwind | frontend build |
+| Vite 8 + Tailwind 4 | frontend build |
 | SQLite | app database in the `db-data` Docker volume |
 | MinIO | private S3-compatible object storage on host ports 19000 (API) / 19001 (console) |
 
@@ -35,11 +34,14 @@ A real-time messenger built with **Laravel 13**, **Laravel Reverb**, **Laravel E
 ```bash
 cd ~/incognito-messenger
 cp .env.example .env
+composer install
 php artisan key:generate
 docker compose up -d --build
 ```
 
-Open **http://localhost:8000**. The MinIO console is at **http://localhost:19001** (credentials from `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`, both `minioadmin` by default). Host ports 19000/19001 are used because 9000/9001 are occupied by another local service on this machine; inside Docker, MinIO still listens on 9000/9001.
+The host commands need PHP 8.3+ and Composer; the Docker image supplies the PHP 8.4 runtime.
+
+Open **http://localhost:8000**. The MinIO console is at **http://localhost:19001** (credentials from `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`, both `minioadmin` by default). Host ports 19000/19001 are used to avoid clashes with services commonly bound to 9000/9001; inside Docker, MinIO still listens on 9000/9001.
 
 | Service | Job | Port |
 |---|---|---|
@@ -66,7 +68,7 @@ docker compose restart webserver
 
 ### Accessing from other machines
 
-Ports are published on all interfaces. Open `http://<server-ip>:8000`. `resources/js/echo.js` derives the WebSocket host from `window.location.hostname`, so the same image connects to `ws://<server-ip>:8080` without a rebuild. Change `REVERB_APP_SECRET` and the MinIO credentials before exposing the app publicly. Allow ports 8000, 8080, 19000 and 19001 through the firewall as needed.
+Ports are published on all interfaces. Open `http://<server-ip>:8000`. `resources/js/echo.js` derives the WebSocket host and port from the page URL, and nginx proxies `/app` and `/apps` to Reverb, so the same image connects over `ws://<server-ip>:8000/app` without a rebuild. Only set `REVERB_BROWSER_PORT=8080` for a split deployment where Reverb is exposed directly with no proxy. Change `REVERB_APP_SECRET` and the MinIO credentials before exposing the app publicly. Allow port 8000 through the firewall; add 8443 for the Caddy HTTPS setup or 8080 for a split Reverb deployment. MinIO's 19000/19001 ports are only needed if you want to reach MinIO directly. For HTTPS on a LAN, see `docs/lan-https-setup.md` and the included `Caddyfile`.
 
 ## Configuration
 
@@ -84,6 +86,8 @@ MINIO_URL=http://localhost:19000
 ```
 
 `MINIO_ENDPOINT` is the server-to-server address used inside Docker (`http://minio:9000`); `MINIO_URL` is the optional browser-visible origin for the signed-URL disk. The browser never needs it: avatars and attachment previews are served through Laravel routes, so only the app's origin matters. Never put `MINIO_SECRET_KEY` in a `VITE_*` variable.
+
+Behind nginx or Caddy, leave `REVERB_BROWSER_PORT` and `REVERB_BROWSER_PATH` empty so Echo uses the page origin and the proxy forwards `/app` and `/apps` to Reverb. Set `REVERB_BROWSER_PORT=8080` only when the browser connects to Reverb directly, such as split `php artisan serve` + `php artisan reverb:start` development.
 
 ### Audio calls and TURN
 
@@ -119,14 +123,19 @@ All routes below require the session cookie and CSRF header.
 
 | Area | Endpoints |
 |---|---|
-| Friends | `GET/POST /api/friends`, `POST /api/friends/{request}/accept`, `POST /api/friends/{request}/reject`, `DELETE /api/friends/{request}`, `DELETE /api/friends/user/{user}` |
-| Message requests | `GET/POST /api/message-requests`, `GET /api/message-requests/{request}`, `POST /api/message-requests/{request}/accept`, `POST /api/message-requests/{request}/delete`, `DELETE /api/message-requests/{request}` |
+| Users | `GET /api/users?q=` |
+| Friends | `GET/POST /api/friends`, `POST /api/friends/{request}/accept`, `POST /api/friends/{request}/reject`, `POST /api/friends/{request}/undo-accept`, `POST /api/friends/{request}/undo-reject`, `POST /api/friends/{request}/undo-cancel`, `DELETE /api/friends/{request}`, `DELETE /api/friends/user/{user}` |
+| Message requests | `GET/POST /api/message-requests`, `GET /api/message-requests/{request}`, `POST /api/message-requests/{request}/accept`, `POST /api/message-requests/{request}/delete`, `POST /api/message-requests/{request}/block`, `POST /api/message-requests/{request}/report`, `POST /api/message-requests/{request}/undo-accept`, `POST /api/message-requests/{request}/undo-delete`, `POST /api/message-requests/{request}/undo-cancel`, `DELETE /api/message-requests/{request}`, `POST /api/requests/seen` |
+| Groups | `GET/POST /api/groups`, `GET/PUT/DELETE /api/groups/{group}`, `POST /api/groups/{group}/members`, `DELETE /api/groups/{group}/members/{user}`, `POST /api/groups/{group}/leave` |
 | Notes | `GET/POST /api/notes`, `GET/PUT/DELETE /api/notes/{note}` |
+| Chat | `GET /api/conversations`, `GET /api/conversations/{id}`, `POST /api/conversations/direct/{user}`, `POST /api/conversations/{id}/seen`, `POST /api/conversations/{id}/messages`, `POST /api/messages/{id}/seen`, `POST /api/messages/{id}/unsend` |
 | Notifications | `GET /api/notifications`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all` |
 | Attachments | `GET /api/attachments/{id}/download`, `GET /api/attachments/{id}/preview` |
-| Chat | `GET /api/conversations`, `GET /api/conversations/{id}`, `POST /api/conversations/direct/{user}`, `POST /api/conversations/{id}/messages`, `POST /api/messages/{id}/unsend` |
 | Presence | `GET /api/presence`, `POST /api/presence/heartbeat`, `POST /api/presence/disconnect` |
-| Calls | `GET /api/calls/config`, `POST /api/calls/invite`, `POST /api/calls/{call}/ringing`, `POST /api/calls/{call}/leave`, `POST /api/calls/{call}/accept`, `POST /api/calls/{call}/reject`, `POST /api/calls/{call}/cancel`, `POST /api/calls/{call}/timeout`, `POST /api/calls/{call}/end`, `POST /api/calls/{call}/signal` |
+| Calls | `GET /api/calls/config`, `POST /api/calls/invite`, `POST /api/calls/{call}/ringing`, `POST /api/calls/{call}/leave`, `POST /api/calls/{call}/accept`, `POST /api/calls/{call}/reject`, `POST /api/calls/{call}/busy`, `POST /api/calls/{call}/cancel`, `POST /api/calls/{call}/timeout`, `POST /api/calls/{call}/end`, `POST /api/calls/{call}/signal` |
+| Settings | `PUT/POST /api/settings/profile`, `GET /api/settings/username/check`, `POST /api/settings/appearance`, `POST /api/settings/notifications`, `GET /api/settings/blocked-users`, `POST/DELETE /api/settings/blocked-users/{user}`, `GET /api/settings/sessions`, `DELETE /api/settings/sessions/others`, `DELETE /api/settings/sessions/{session}` |
+
+Profile, avatar, password and account-deletion routes live under `/profile` and are handled by the settings page.
 
 ### Message sound assets
 
@@ -147,8 +156,8 @@ Browser ──HTTP──► Controllers ──Gate/policy──► Database / Mi
 ```
 
 - `ConversationPolicy`, `GroupPolicy`, `FriendRequestPolicy`, `MessageRequestPolicy`, `NotePolicy`, `NotificationPolicy` and `MessageAttachmentPolicy` gate every endpoint.
-- `routes/channels.php` checks participation/membership live for `conversation.{id}`; `user.{id}` is restricted to that user. Echo adds the wire prefix, so callbacks use bare names.
-- Attachments are authorized **before** a temporary MinIO URL is generated. The URL cannot bypass the policy because it is short-lived and issued only to a participant.
+- `routes/channels.php` checks participation/membership live for `conversation.{id}`; `user.{id}` is restricted to that user, while `users.{id}` and `call.{callId}` back call signaling. Echo adds the wire prefix, so callbacks use bare names.
+- Attachments are authorized **before** Laravel streams the private object. No browser-visible MinIO URL is issued, so the policy cannot be bypassed.
 - The sender identity always comes from `auth()->id()` — request payloads cannot impersonate another user.
 - Message history uses cursor pagination (30 per page). Every message payload carries its own `status`, `seen_by` and `attachments`, so pagination and live events share one render path.
 
@@ -156,18 +165,21 @@ Browser ──HTTP──► Controllers ──Gate/policy──► Database / Mi
 
 | Path | Purpose |
 |---|---|
-| `app/Models/` | Users, profiles, conversations, groups, messages, reads, friends, requests, notes, notifications, attachments, calls |
+| `app/Models/` | Users, profiles, blocks, conversations, groups, messages, reads, friends, requests, notes, notifications, attachments, calls |
 | `app/Policies/` | Backend authorization rules for every owned resource |
-| `app/Http/Controllers/` | Auth, profile, avatar, chat, group, friend, request, note, notification, attachment and call controllers |
-| `app/Events/` | `MessageSent`, `MessageSeen`, `MessageUnsent`, `PresenceUpdated`, `NotificationCreated`, `ConversationsUpdated`, `UnreadCountsUpdated`, `AccessRevoked`, `GroupUpdated`, `CallEvent` |
-| `app/Support/` | `UnreadCounter`, `PairKey`, `Notifier`, `AttachmentUpload`, `ReverbConnectionTerminator`, `CallService` |
+| `app/Http/Controllers/` | Auth, settings/profile, avatar, user search, chat, group, friend, message request, note, notification, request-seen, attachment and call controllers |
+| `app/Events/` | `MessageSent`, `MessageSeen`, `MessageUnsent`, `PresenceUpdated`, `NotificationCreated`, `NotificationRead`, `NoteChanged`, `ConversationsUpdated`, `UnreadCountsUpdated`, `AccessRevoked`, `GroupUpdated`, `CallEvent` |
+| `app/Support/` | `UnreadCounter`, `PairKey`, `Notifier`, `AttachmentUpload`, `AvatarUpload`, `UnsendPolicy`, `ReverbConnectionTerminator`, `CallService` |
 | `app/Console/Commands/` | `PruneOrphanedFiles`, `ExpireCalls` (scheduled every minute as a ringing-call safety net) |
 | `database/migrations/` | Full schema, indexes, foreign keys and cascades |
 | `docker/minio/` | Locally built MinIO server image and bucket init script |
 | `resources/js/app.js` | UI behaviour, fetch/XHR calls and Echo subscriptions |
+| `resources/js/echo.js` | Same-origin Echo/Reverb connection setup |
 | `resources/js/calls/` | WebRTC engine, Alpine call store, overlay and chat call button |
 | `resources/css/calls.css` | Call overlay, floating bar and call-history styles |
-| `resources/css/app.css` | Messenger layout, notes, receipts, presence, unsend menu and attachment styles |
+| `resources/css/app.css` | Messenger layout, notes, settings, receipts, presence, unsend menu and attachment styles |
+| `resources/views/` | Messenger shell, settings page, auth pages, call overlay and Reverb meta partial |
+| `docs/lan-https-setup.md` | Optional LAN HTTPS walkthrough for Caddy |
 | `public/sounds/` | Small preloaded WAV files used by the notification sounds |
 
 ## Development
@@ -189,7 +201,7 @@ docker compose logs -f minio
 
 `storage:prune-orphaned-files` only scans application-owned prefixes (`avatars/` and `conversations/`) and removes objects that no profile, group or message attachment references. Run with `--dry-run` first. Failed uploads are cleaned up immediately in the request; the command catches other orphans (for example, from an interrupted deploy).
 
-Tests cover registration/login, profile and avatar validation, direct-chat privacy, friend requests, message requests, rejection/cancellation, notes/expiry/visibility, read receipts (including groups and pagination), MinIO attachment authorization, realtime event/channel rules, notifications, group management, audio-call signaling/state/history, cascades, storage pruning and schema indexes.
+Tests cover registration/login, profile and avatar validation, direct-chat privacy, friend requests, message requests, rejection/cancellation/undo, blocking, notes/expiry/visibility, read receipts (including groups and pagination), MinIO attachment authorization, realtime event/channel rules, notifications, group management, settings, message deletion rules, audio-call signaling/state/history, cascades, storage pruning and schema indexes.
 
 ## Testing
 
@@ -224,6 +236,6 @@ An optional pre-commit hook formats staged PHP files with Pint. Enable it per cl
 
 - Events use `ShouldBroadcastNow` so delivery is immediate without a queue worker. For high traffic, switch to `ShouldBroadcast` and run `php artisan queue:work`.
 - Typing indicators are whispers: browser → Reverb → other browsers. They never reach Laravel and are throttled in the client.
-- The WebSocket key is baked into the JS bundle at build time; changing `REVERB_APP_KEY` requires `docker compose build`.
+- The browser reads the non-secret Reverb key from server-rendered meta tags (`resources/views/partials/reverb-meta.blade.php`); `VITE_REVERB_APP_KEY` is only a build-time fallback. Changing `REVERB_APP_KEY` takes effect after the app container restarts, without rebuilding the frontend.
 - Avatar uploads are capped at 10 MB and message attachments at 20 MB each (5 per message). PHP allows 25 MB per file and 110 MB per request, and nginx allows 110 MB request bodies, so Laravel validates every file before PHP or nginx can truncate a valid batch.
  
