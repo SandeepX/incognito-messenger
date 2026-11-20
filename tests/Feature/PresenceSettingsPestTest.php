@@ -121,7 +121,6 @@ describe('privacy enforcement', function () {
             'body' => 'Hello?',
         ])->assertForbidden();
 
-        // friends_of_friends: only reachable through a mutual friend.
         $bob = makeUser('bob');
         $friendOfFriend = makeUser('fof', [], ['message_request_policy' => 'friends_of_friends']);
         $stranger = makeUser('stranger', [], ['message_request_policy' => 'friends_of_friends']);
@@ -167,7 +166,6 @@ describe('privacy enforcement', function () {
 
         actingAsUser($bob)->getJson("/api/conversations/{$conversation->id}")->assertOk();
 
-        // The receipt is still stored server-side; only the sender cannot see it.
         $this->assertDatabaseHas('message_reads', [
             'message_id' => $messageId,
             'user_id' => $bob->id,

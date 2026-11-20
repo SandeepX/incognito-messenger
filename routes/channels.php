@@ -4,19 +4,6 @@ use App\Models\Call;
 use App\Models\Conversation;
 use Illuminate\Support\Facades\Broadcast;
 
-/*
-|--------------------------------------------------------------------------
-| Channel Authorization
-|--------------------------------------------------------------------------
-| Echo adds the wire prefix ("presence-"/"private-") itself, and Laravel
-| strips it again before calling these rules. That is why the names here
-| are bare: 'online', 'conversation.{id}', 'user.{id}'.
-|
-| These callbacks are the SECURITY BOUNDARY for real-time data. The UI
-| hiding a button is never enough — every subscription is checked here.
-*/
-
-// Presence: any logged-in user may appear in the online list.
 Broadcast::channel('online', function ($user) {
     return array_merge([
         'id' => $user->id,
@@ -26,7 +13,6 @@ Broadcast::channel('online', function ($user) {
     ], $user->presencePayload());
 });
 
-// One private channel per conversation, shared by direct chats and groups.
 Broadcast::channel('conversation.{id}', function ($user, $id) {
     $conversation = Conversation::with('group')->find($id);
 
@@ -38,27 +24,17 @@ Broadcast::channel('conversation.{id}', function ($user, $id) {
         return $conversation->isParticipant($user->id);
     }
 
-    // Groups: membership is checked live on EVERY auth request, so
-    // removing a member revokes their access to future subscriptions.
     return $conversation->group?->isMember($user->id) ?? false;
 });
 
-// Per-user channel for unread counts / account-specific notifications.
 Broadcast::channel('user.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
 
-// Call signaling uses its own private user channel. The wire name is
-// "private-users.{id}" (Echo adds the "private-" prefix). Authorization
-// happens on every /broadcasting/auth request, so a user can only ever
-// subscribe to their own call channel — never another participant's.
 Broadcast::channel('users.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
 
-// Optional per-call channel for deployments that prefer call-scoped
-// signaling. Only the two participants may join; membership is checked
-// live against the persisted call on every authorization request.
 Broadcast::channel('call.{callId}', function ($user, $callId) {
     $call = Call::find($callId);
 

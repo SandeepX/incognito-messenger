@@ -14,15 +14,12 @@ use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller
 {
-    /** Conversation list for the sidebar (one query + eager loads). */
     public function index(): JsonResponse
     {
         $meUser = auth()->user()->loadMissing('profile');
         $me = (int) $meUser->id;
 
         $conversations = $meUser->conversations()
-            // Message requests are deliberately absent from the normal list
-            // until the recipient accepts them.
             ->where(function ($query) {
                 $query->doesntHave('messageRequest')
                     ->orWhereHas('messageRequest', fn ($q) => $q->where('status', 'accepted'));
@@ -82,7 +79,6 @@ class ConversationController extends Controller
         return response()->json($list);
     }
 
-    /** Paginated history for one authorized conversation. */
     public function show(Conversation $conversation): JsonResponse
     {
         $this->authorize('view', $conversation);
@@ -111,7 +107,6 @@ class ConversationController extends Controller
 
                 MessageRead::insertOrIgnore($rows);
 
-                // insertOrIgnore skips duplicates; announce only rows we created.
                 $newReads = MessageRead::where('user_id', $me)
                     ->whereIn('message_id', $ids)
                     ->with(['user.profile', 'message'])
@@ -122,8 +117,6 @@ class ConversationController extends Controller
             $conversation->participants()->updateExistingPivot($me, ['last_read_at' => now()]);
         });
 
-        // Compute once: the receipts, the cross-tab event and the HTTP
-        // response must all agree, even if a websocket event is missed.
         $counts = UnreadCounter::for($me);
 
         if ($meUser->readReceiptsEnabled()) {
@@ -132,7 +125,6 @@ class ConversationController extends Controller
             }
         }
 
-        // Other tabs of the same user should drop their badges too.
         broadcast(new UnreadCountsUpdated($me, $counts));
 
         $page = $conversation->messages()
@@ -150,11 +142,6 @@ class ConversationController extends Controller
         ]);
     }
 
-    /**
-     * Persist read receipts for a conversation that is currently visible.
-     * Used when messages arrive live or when the tab regains focus, so the
-     * server's seen state matches what the recipient actually saw.
-     */
     public function markSeen(Conversation $conversation): JsonResponse
     {
         $this->authorize('view', $conversation);
@@ -209,7 +196,6 @@ class ConversationController extends Controller
         ]);
     }
 
-    /** Find or create the single 1:1 conversation with an accepted friend. */
     public function storeDirect(User $user): JsonResponse
     {
         $meUser = auth()->user()->loadMissing('profile');

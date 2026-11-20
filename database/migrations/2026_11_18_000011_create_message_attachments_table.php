@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('storage_path');
             $table->string('mime_type', 150);
             $table->unsignedBigInteger('file_size');
-            $table->string('attachment_type', 10); // image | file
+            $table->string('attachment_type', 10);
             $table->timestamps();
 
             $table->index('message_id');

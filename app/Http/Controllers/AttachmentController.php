@@ -8,7 +8,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AttachmentController extends Controller
 {
-    /** Authorize first, then stream the private object from this app origin. */
     public function download(MessageAttachment $attachment): StreamedResponse
     {
         $this->authorize('view', $attachment);
@@ -22,7 +21,6 @@ class AttachmentController extends Controller
         return $this->stream($disk, $path, $disposition, $attachment->mime_type);
     }
 
-    /** Inline preview for images only. */
     public function preview(MessageAttachment $attachment): StreamedResponse
     {
         $this->authorize('view', $attachment);
@@ -35,10 +33,6 @@ class AttachmentController extends Controller
         return $this->stream($disk, $path, 'inline', $attachment->mime_type);
     }
 
-    /**
-     * Streaming through Laravel keeps MinIO private and works no matter which
-     * host the browser uses to open the app (LAN, tunnel or localhost).
-     */
     private function stream($disk, string $path, string $disposition, string $mimeType): StreamedResponse
     {
         return response()->stream(function () use ($disk, $path) {

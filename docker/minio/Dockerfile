@@ -1,6 +1,3 @@
-# The official minio/minio image and dl.min.io binaries were discontinued for
-# community use. Alpine still packages the same AGPLv3 MinIO server, so we
-# build an equivalent image locally with both the server and the `mc` client.
 FROM alpine:latest
 
 RUN apk add --no-cache minio minio-client ca-certificates

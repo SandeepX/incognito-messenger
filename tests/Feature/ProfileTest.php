@@ -53,7 +53,6 @@ it('persists message sound and active status settings', function () {
         'show_active_status' => 0,
     ]);
 
-    // Message sounds live on the dedicated notification-settings endpoint.
     $this->actingAs($user)->postJson('/api/settings/notifications', [
         'message_sounds' => false,
     ])->assertOk()->assertJsonPath('message_sounds', false);
@@ -79,14 +78,12 @@ it('requires unique username and email but allows the user to keep their own val
     $user = $this->userWithProfile('alice');
     $this->userWithProfile('bob');
 
-    // Saving your own unchanged values must succeed.
     $this->actingAs($user)->put('/profile', [
         'name' => $user->name,
         'username' => 'alice',
         'email' => 'alice@example.com',
     ])->assertSessionHasNoErrors();
 
-    // Taking someone else's username/email must fail.
     $this->actingAs($user)->put('/profile', [
         'name' => $user->name,
         'username' => 'bob',
@@ -106,8 +103,6 @@ it('validates avatar upload type and size', function () {
         'avatar' => UploadedFile::fake()->image('huge.jpg')->size(11000),
     ])->assertSessionHasErrors('avatar');
 
-    // A typical phone photo (a few MB) must be accepted; the old 2 MB
-    // cap rejected these before Laravel could validate them.
     $this->actingAs($user)->post('/profile/avatar', [
         'avatar' => UploadedFile::fake()->image('phone-photo.jpg')->size(3000),
     ])->assertRedirect();

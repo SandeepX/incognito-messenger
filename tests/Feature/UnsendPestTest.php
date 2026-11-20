@@ -59,7 +59,7 @@ describe('delete for everyone on an unseen message', function () {
             $ids = array_column($history, 'id');
             $placeholder = collect($history)->firstWhere('id', $target);
 
-            expect($ids)->toBe([$last, $target, $first]) // newest first, same rows
+            expect($ids)->toBe([$last, $target, $first])
                 ->and($placeholder['id'])->toBe($target)
                 ->and($placeholder['is_unsent'])->toBeTrue()
                 ->and($placeholder['body'])->toBe('')
@@ -117,7 +117,6 @@ describe('delete for everyone on a seen message', function () {
 
         $messageId = ($this->send)('Already seen');
 
-        // The recipient reads it over the live socket.
         actingAsUser($this->bob)
             ->postJson("/api/messages/{$messageId}/seen")
             ->assertOk();
@@ -139,7 +138,6 @@ describe('delete for everyone on a seen message', function () {
     it('uses the seen state even when the delete races the read receipt', function () {
         $messageId = ($this->send)('Race');
 
-        // The delete request is processed after the read was persisted.
         actingAsUser($this->bob)->getJson("/api/conversations/{$this->conversation->id}")->assertOk();
 
         actingAsUser($this->alice)
@@ -157,7 +155,6 @@ describe('delete for me', function () {
         $messageId = ($this->send)('Only for me');
         actingAsUser($this->bob)->getJson("/api/conversations/{$this->conversation->id}")->assertOk();
 
-        // Record only the events caused by the delete itself.
         Event::fake([MessageUnsent::class, ConversationsUpdated::class, UnreadCountsUpdated::class]);
 
         $response = actingAsUser($this->alice)
@@ -170,8 +167,6 @@ describe('delete for me', function () {
         expect($response['id'])->toBe($messageId)
             ->and(Message::findOrFail($messageId)->deleted_for)->toBe([$this->alice->id]);
 
-        // No event may reach the recipient: their view must not change.
-        // Assert before reading Bob's history, which itself refreshes his badge.
         Event::assertNotDispatched(MessageUnsent::class);
         Event::assertNotDispatched(
             ConversationsUpdated::class,

@@ -48,11 +48,6 @@ class GroupController extends Controller
         return response()->json($this->payload($group->load('conversation')));
     }
 
-    /**
-     * Create the group, its conversation, and both membership records in
-     * ONE transaction — a half-created group would be invisible and
-     * unusable, and would break channel authorization.
-     */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -172,11 +167,6 @@ class GroupController extends Controller
         return response()->json($this->payload($group));
     }
 
-    /**
-     * Removing a member also removes the conversation participant row.
-     * That revokes future /broadcasting/auth approvals immediately; the
-     * AccessRevoked event makes an already-open browser leave the channel.
-     */
     public function removeMember(Group $group, User $user): JsonResponse
     {
         $this->authorize('manage', $group);
@@ -192,7 +182,6 @@ class GroupController extends Controller
         broadcast(new GroupUpdated($group->load('conversation'), 'members'));
         broadcast(new UnreadCountsUpdated($user->id, UnreadCounter::for($user->id)));
 
-        // Also close sockets that subscribed before the membership change.
         ReverbConnectionTerminator::forUser($user->id);
 
         return response()->json($this->payload($group));
@@ -230,16 +219,12 @@ class GroupController extends Controller
             fn ($q) => $q->where('conversation_id', $conversationId),
         )->pluck('storage_path')->all();
 
-        // Tell every browser to leave before the channel disappears.
         foreach ($memberIds as $id) {
             broadcast(new AccessRevoked($conversationId, $id));
         }
 
-        // Cascades remove the conversation, its participants, messages,
-        // read receipts and membership rows.
         $group->delete();
 
-        // Cascade cannot reach MinIO, so remove the objects explicitly.
         if ($avatarPath) {
             Storage::disk('minio')->delete($avatarPath);
         }

@@ -48,7 +48,6 @@ class FriendController extends Controller
         ];
     }
 
-    /** Friends, incoming and outgoing requests in one payload. */
     public function index(): JsonResponse
     {
         $me = auth()->user();
@@ -258,7 +257,6 @@ class FriendController extends Controller
         return response()->json(['status' => 'pending', 'id' => $friendRequest->id]);
     }
 
-    /** Remove an accepted friend (both friendship rows). */
     public function destroy(User $user): JsonResponse
     {
         abort_if($user->id === auth()->id(), 422, 'You cannot remove yourself.');

@@ -8,9 +8,6 @@ use Illuminate\Http\JsonResponse;
 
 class RequestSeenController extends Controller
 {
-    /**
-     * Mark all pending received requests as seen (clears unseen request badges).
-     */
     public function __invoke(): JsonResponse
     {
         $me = auth()->id();

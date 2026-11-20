@@ -77,7 +77,6 @@ class MessageRequestController extends Controller
         ]);
     }
 
-    /** Preview the request plus sender profile and the short thread. */
     public function show(MessageRequest $messageRequest): JsonResponse
     {
         $this->authorize('view', $messageRequest);
@@ -101,7 +100,6 @@ class MessageRequestController extends Controller
         return response()->json($this->payload($messageRequest, $side) + ['messages' => $messages]);
     }
 
-    /** Start a request with someone who is not yet a friend. */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -216,7 +214,6 @@ class MessageRequestController extends Controller
         ]);
     }
 
-    /** Recipient deletes / rejects an incoming request. */
     public function delete(MessageRequest $messageRequest): JsonResponse
     {
         $this->authorize('respond', $messageRequest);
@@ -234,7 +231,6 @@ class MessageRequestController extends Controller
         return response()->json(['status' => 'deleted', 'id' => $messageRequest->id]);
     }
 
-    /** Block: removes the pending request and blocks the sender. */
     public function block(MessageRequest $messageRequest): JsonResponse
     {
         $this->authorize('respond', $messageRequest);
@@ -258,7 +254,6 @@ class MessageRequestController extends Controller
         return response()->json(['status' => 'blocked', 'id' => $messageRequest->id]);
     }
 
-    /** Report: removes the pending request (no report storage system exists). */
     public function report(MessageRequest $messageRequest): JsonResponse
     {
         $this->authorize('respond', $messageRequest);
@@ -276,7 +271,6 @@ class MessageRequestController extends Controller
         return response()->json(['status' => 'reported', 'id' => $messageRequest->id]);
     }
 
-    /** Sender withdraws their own pending request. */
     public function cancel(MessageRequest $messageRequest): JsonResponse
     {
         $this->authorize('cancel', $messageRequest);

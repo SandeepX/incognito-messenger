@@ -24,8 +24,6 @@ class PruneOrphanedFiles extends Command
             ->merge(MessageAttachment::query()->pluck('storage_path'))
             ->flip();
 
-        // Only touch paths this application owns; a shared bucket may hold
-        // unrelated objects that must never be removed here.
         $objects = collect($disk->allFiles())->filter(
             fn (string $path) => str_starts_with($path, 'avatars/') || str_starts_with($path, 'conversations/'),
         );

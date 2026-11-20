@@ -2,10 +2,9 @@
 
 namespace App\Support;
 
-/** Shared validation rules for message attachments stored in MinIO. */
 final class AttachmentUpload
 {
-    public const MAX_KILOBYTES = 20480; // 20 MB
+    public const MAX_KILOBYTES = 20480;
 
     public const MAX_LABEL = '20 MB';
 
@@ -39,7 +38,6 @@ final class AttachmentUpload
         return str_starts_with($mime, 'image/');
     }
 
-    /** Never trust the client-supplied filename: keep a safe basename. */
     public static function safeFilename(string $original): string
     {
         $original = basename(str_replace('\\', '/', $original));

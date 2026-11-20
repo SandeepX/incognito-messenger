@@ -22,10 +22,6 @@ use Illuminate\Support\Str;
 
 class MessageController extends Controller
 {
-    /**
-     * Send a message to a conversation the caller is allowed to use.
-     * Ownership comes from auth() — never from a "from" field in the request.
-     */
     public function store(Conversation $conversation, Request $request): JsonResponse
     {
         $this->authorize('send', $conversation);
@@ -33,9 +29,6 @@ class MessageController extends Controller
 
         $data = $request->validate([
             'body' => [
-                // TrimStrings turns a whitespace-only body into null, which
-                // makes "nullable" skip the closure below. Require a body
-                // unless files were attached so blank messages are rejected.
                 'required_without:attachments', 'nullable', 'string', 'max:2000',
                 function ($attribute, $value, $fail) use ($request) {
                     if ((! is_string($value) || trim($value) === '') && ! $request->hasFile('attachments')) {
@@ -59,7 +52,6 @@ class MessageController extends Controller
                     'body' => trim($data['body'] ?? ''),
                 ]);
 
-                // The sender has obviously "read" their own message.
                 MessageRead::create([
                     'message_id' => $message->id,
                     'user_id' => auth()->id(),
@@ -97,7 +89,6 @@ class MessageController extends Controller
         $message->load(['sender.profile', 'reads.user.profile', 'attachments']);
         broadcast(new MessageSent($message));
 
-        // Push fresh badge counts to every other participant.
         $recipients = $conversation->type === 'group'
             ? $conversation->group->members()
             : $conversation->participants();
@@ -109,13 +100,6 @@ class MessageController extends Controller
         return response()->json($message->payload(), 201);
     }
 
-    /**
-     * Delete a message either for everyone (sender-only, unseen-only) or
-     * just for the caller. The server always makes the decision: it locks
-     * the row and reads the current message_reads state inside the same
-     * transaction, so a delete request racing a seen receipt cannot remove
-     * a message the recipient has already read.
-     */
     public function unsend(Message $message, Request $request): JsonResponse
     {
         $me = (int) auth()->id();
@@ -141,8 +125,6 @@ class MessageController extends Controller
                     UnsendPolicy::NOT_SENDER
                 );
 
-                // Idempotent: a retried request is harmless, but do not send
-                // another broadcast for an already-unsent message.
                 if ($locked->is_unsent) {
                     return [$locked, false];
                 }
@@ -157,8 +139,6 @@ class MessageController extends Controller
                     UnsendPolicy::SEEN_MESSAGE
                 );
 
-                // Collect private media here; remove it from MinIO only after
-                // the database transaction commits.
                 $paths = $locked->attachments()->pluck('storage_path')->all();
                 $locked->attachments()->delete();
 
@@ -172,8 +152,6 @@ class MessageController extends Controller
                 return [$locked, true];
             }
 
-            // Delete for me: either participant may hide any message from
-            // their own history. This never touches the shared message.
             $deletedFor = array_values(array_unique(array_map(
                 'intval',
                 $locked->deleted_for ?? []
@@ -199,8 +177,6 @@ class MessageController extends Controller
             $event = new MessageUnsent($message, 'everyone', []);
 
             if ($changed) {
-                // "Delete for everyone" is the only mode that may reach the
-                // other participants.
                 broadcast($event);
 
                 $conversation = $message->conversation;
@@ -218,8 +194,6 @@ class MessageController extends Controller
             return response()->json($event->broadcastWith());
         }
 
-        // Local delete: refresh only the caller's own unread counts and
-        // sidebar. No event is ever emitted to the other participants.
         $counts = UnreadCounter::for($me);
         broadcast(new UnreadCountsUpdated($me, $counts));
         broadcast(new ConversationsUpdated($me));
@@ -235,11 +209,6 @@ class MessageController extends Controller
         ]);
     }
 
-    /**
-     * Persist a live-delivered message as seen. Without this, a message
-     * watched arriving over the socket had no message_reads row, so a
-     * subsequent "delete for everyone" incorrectly looked unseen.
-     */
     public function markSeen(Message $message): JsonResponse
     {
         $meUser = auth()->user()->loadMissing('profile');
@@ -277,10 +246,6 @@ class MessageController extends Controller
         ]);
     }
 
-    /**
-     * Direct threads may only be used by accepted friends (or a message
-     * request that has been accepted, which also creates the friendship).
-     */
     private function ensureMessagingAllowed(Conversation $conversation): void
     {
         if ($conversation->type !== 'direct') {

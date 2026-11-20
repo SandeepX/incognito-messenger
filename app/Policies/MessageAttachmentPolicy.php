@@ -15,8 +15,6 @@ class MessageAttachmentPolicy
             return false;
         }
 
-        // A pending message request is not a normal conversation yet; only
-        // the two participants may look at its attachment preview.
         if ($conversation->isPendingRequest()) {
             $request = $conversation->messageRequest;
 
@@ -27,7 +25,6 @@ class MessageAttachmentPolicy
             return $conversation->isParticipant($user->id);
         }
 
-        // Checked live so removed group members lose access immediately.
         return $conversation->group?->isMember($user->id) ?? false;
     }
 }

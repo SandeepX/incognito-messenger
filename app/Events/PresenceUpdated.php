@@ -9,16 +9,10 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Lightweight presence update. The recipient list is limited to friends and
- * people who share a normal (non-pending) conversation, so privacy is enforced
- * on the server before anything is put on the wire.
- */
 class PresenceUpdated implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    /** @param array<int, int> $audience */
     public function __construct(
         public User $user,
         public bool $online,

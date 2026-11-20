@@ -126,13 +126,10 @@ describe('responding to friend requests', function () {
         actingAsUser($alice)->postJson('/api/friends', ['user_id' => $bob->id])->assertCreated();
         $request = FriendRequest::firstOrFail();
 
-        // The sender cannot accept their own outgoing request.
         actingAsUser($alice)->postJson("/api/friends/{$request->id}/accept")->assertForbidden();
 
-        // The recipient cannot cancel it.
         actingAsUser($bob)->deleteJson("/api/friends/{$request->id}")->assertForbidden();
 
-        // A stranger cannot touch it at all.
         actingAsUser($eve)->postJson("/api/friends/{$request->id}/accept")->assertForbidden();
         actingAsUser($eve)->deleteJson("/api/friends/{$request->id}")->assertForbidden();
 
@@ -220,7 +217,6 @@ describe('request badges', function () {
         expect($after['counts']['unseen_incoming'])->toBe(0)
             ->and($after['incoming'][0]['unseen'])->toBeFalse();
 
-        // The request itself stays pending and can still be accepted.
         $requestId = $after['incoming'][0]['id'];
         actingAsUser($bob)->postJson("/api/friends/{$requestId}/accept")->assertOk();
     });

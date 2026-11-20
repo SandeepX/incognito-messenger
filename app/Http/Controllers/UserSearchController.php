@@ -9,13 +9,6 @@ use Illuminate\Http\Request;
 
 class UserSearchController extends Controller
 {
-    /**
-     * Search registered users by display name or username.
-     *
-     * The sidebar's "Find friends" picker passes scope=find-friends. That
-     * scope applies friend/conversation/pending-request exclusions on the
-     * server; the unscoped query remains available for group member pickers.
-     */
     public function index(Request $request): JsonResponse
     {
         $query = trim((string) $request->input('q', ''));
@@ -32,15 +25,12 @@ class UserSearchController extends Controller
             ->when($blockedIds, fn ($q) => $q->whereNotIn('id', $blockedIds))
             ->when($findFriends, function ($q) use ($me) {
                 $q->whereNotIn('id', $me->friendIds())
-                    // Pending in either direction: no duplicate or stale invites.
                     ->whereDoesntHave('sentFriendRequests', fn ($r) => $r
                         ->where('status', 'pending')
                         ->where('recipient_id', $me->id))
                     ->whereDoesntHave('receivedFriendRequests', fn ($r) => $r
                         ->where('status', 'pending')
                         ->where('sender_id', $me->id))
-                    // Any shared thread (direct chat, group, or a message
-                    // request conversation) already exists: hide the user.
                     ->whereDoesntHave('conversations', fn ($c) => $c
                         ->whereHas('participants', fn ($p) => $p->where('user_id', $me->id)));
             })
@@ -54,7 +44,6 @@ class UserSearchController extends Controller
             ->limit(20)
             ->get();
 
-        // One query for all existing threads instead of one per user.
         $conversationIds = Conversation::whereIn(
             'direct_key',
             $users->map(fn (User $u) => Conversation::directKey((int) $me->id, (int) $u->id)),

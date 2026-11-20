@@ -359,9 +359,6 @@ class SettingsController extends Controller
         ];
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
     private function sessionsFor(Request $request): array
     {
         $current = $request->session()->getId();
@@ -387,9 +384,6 @@ class SettingsController extends Controller
         })->values()->all();
     }
 
-    /**
-     * @return array{device: string, browser: ?string, platform: ?string}
-     */
     private function parseUserAgent(string $ua): array
     {
         if ($ua === '') {

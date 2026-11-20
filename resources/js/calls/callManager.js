@@ -1,10 +1,3 @@
-/*
- * WebRTC call engine.
- *
- * Everything native (RTCPeerConnection, MediaStream, tracks, the remote
- * <audio> element) stays in this module. Alpine only receives plain values
- * through the "call" store. Socket listeners are registered exactly once.
- */
 
 const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.content;
 const csrf = () => meta('csrf-token') || '';
@@ -68,10 +61,6 @@ const state = {
     ringingAcked: null,
 };
 
-/* ------------------------------------------------------------------ */
-/* HTTP helpers                                                        */
-/* ------------------------------------------------------------------ */
-
 async function request(url, options = {}) {
     const { headers = {}, body, ...rest } = options;
     const response = await fetch(url, {
@@ -87,7 +76,7 @@ async function request(url, options = {}) {
     });
 
     let data = null;
-    try { data = await response.json(); } catch { /* empty response */ }
+    try { data = await response.json(); } catch {}
 
     if (!response.ok) {
         const error = new Error(data?.message || `Request failed (${response.status})`);
@@ -104,7 +93,7 @@ function beacon(url, data = {}) {
     try {
         const params = new URLSearchParams({ _token: csrf(), ...data });
         navigator.sendBeacon(url, params);
-    } catch { /* best effort */ }
+    } catch {}
 }
 
 function friendlyError(error) {
@@ -132,10 +121,6 @@ function preferredSpeakerId() {
     try { return localStorage.getItem(`incognito-speaker-device-${myId()}`) || ''; } catch { return ''; }
 }
 
-/* ------------------------------------------------------------------ */
-/* Audio / media                                                       */
-/* ------------------------------------------------------------------ */
-
 function ensureRemoteAudio() {
     if (state.remoteAudio) return state.remoteAudio;
 
@@ -160,8 +145,6 @@ async function getMicrophone() {
     if (state.micPromise) return state.micPromise;
 
     state.micPromise = (async () => {
-        // getUserMedia is only exposed in a secure context. Check both so an
-        // insecure LAN origin gets a clear message instead of a generic error.
         if (!window.isSecureContext || !isSecure()) {
             const error = new Error(HTTPS_MESSAGE);
             error.name = 'SecurityError';
@@ -194,12 +177,10 @@ async function getMicrophone() {
             }
         }
 
-        // The user may have ended the call while the permission prompt was
-        // open. Never leave a hot microphone behind in that case.
         const status = store()?.status;
         if (!['calling', 'incoming', 'connecting', 'active', 'reconnecting'].includes(status)) {
             stream.getTracks().forEach((track) => {
-                try { track.stop(); } catch { /* ignore */ }
+                try { track.stop(); } catch {}
             });
             throw new Error('Call cancelled.');
         }
@@ -219,14 +200,10 @@ async function getMicrophone() {
 function stopMicrophone() {
     if (!state.localStream) return;
     state.localStream.getTracks().forEach((track) => {
-        try { track.stop(); } catch { /* ignore */ }
+        try { track.stop(); } catch {}
     });
     state.localStream = null;
 }
-
-/* ------------------------------------------------------------------ */
-/* Tones                                                               */
-/* ------------------------------------------------------------------ */
 
 function audioContext() {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -286,10 +263,6 @@ function stopTones() {
     }
 }
 
-/* ------------------------------------------------------------------ */
-/* Peer connection                                                     */
-/* ------------------------------------------------------------------ */
-
 function resetPeer() {
     if (state.pc) {
         try {
@@ -298,7 +271,7 @@ function resetPeer() {
             state.pc.onconnectionstatechange = null;
             state.pc.oniceconnectionstatechange = null;
             state.pc.close();
-        } catch { /* ignore */ }
+        } catch {}
         state.pc = null;
     }
 
@@ -312,7 +285,6 @@ async function preparePeerConnection() {
     state.pcPromise = (async () => {
         const stream = await getMicrophone();
 
-        // The call may have ended while the microphone prompt was open.
         if (!state.call || !['connecting', 'active', 'reconnecting'].includes(store()?.status)) {
             stopMicrophone();
             return null;
@@ -369,11 +341,6 @@ async function preparePeerConnection() {
     }
 }
 
-/**
- * SDP is ASCII, but CRLF line endings can be rewritten by transports on the
- * way to the other tab. Carrying it as base64 keeps the session description
- * byte-for-byte identical through JSON/broadcast layers.
- */
 function encodeSdp(sdp) {
     return btoa(String(sdp));
 }
@@ -403,7 +370,7 @@ async function flushIce() {
 
     const pending = state.pendingIce.splice(0);
     for (const candidate of pending) {
-        try { await state.pc.addIceCandidate(candidate); } catch { /* ignore */ }
+        try { await state.pc.addIceCandidate(candidate); } catch {}
     }
 }
 
@@ -442,7 +409,6 @@ async function handleSignal(type, event) {
         }
     } catch (error) {
         console.warn('[call] signal error', type, error?.name, error?.message);
-        // A bad/expired SDP should never leave the UI stuck in connecting.
         if (['connecting', 'active', 'reconnecting'].includes(store()?.status)) {
             onConnectionTrouble('failed');
         }
@@ -455,9 +421,6 @@ async function sendSignal(type, payload) {
     const callId = state.call.id;
     let lastError = null;
 
-    // Trickle ICE fires many requests at once. A transient 5xx/429 (for
-    // example a locked SQLite cache during another write) must never lose
-    // an offer or answer, so retry those while keeping client errors final.
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
             await request(`/api/calls/${callId}/signal`, {
@@ -517,8 +480,6 @@ function onConnectionTrouble(kind) {
 function retryConnection() {
     if (!state.call || !state.pc) return;
 
-    // Signaling can reconnect while the peer connection stayed healthy.
-    // Never tear down working audio just because the socket blinked.
     if (state.pc.connectionState === 'connected'
         || state.pc.iceConnectionState === 'connected'
         || state.pc.iceConnectionState === 'completed') {
@@ -529,14 +490,10 @@ function retryConnection() {
     patch({ status: 'reconnecting', error: null });
 
     if (state.role === 'caller') {
-        try { state.pc.restartIce(); } catch { /* ignore */ }
+        try { state.pc.restartIce(); } catch {}
         createOffer().catch(() => {});
     }
 }
-
-/* ------------------------------------------------------------------ */
-/* Timer / quality                                                     */
-/* ------------------------------------------------------------------ */
 
 function updateElapsed() {
     if (!state.startedAt) return;
@@ -580,7 +537,7 @@ async function updateQuality() {
         else if (rtt > 0.2 && quality === 'good') quality = 'fair';
 
         patch({ quality });
-    } catch { /* stats are best effort */ }
+    } catch {}
 }
 
 function startStatsTimer() {
@@ -588,10 +545,6 @@ function startStatsTimer() {
     updateQuality();
     state.statsTimer = setInterval(updateQuality, 3000);
 }
-
-/* ------------------------------------------------------------------ */
-/* Local lifecycle                                                     */
-/* ------------------------------------------------------------------ */
 
 function clearCallTimers() {
     clearTimeout(state.ringTimer);
@@ -612,7 +565,7 @@ function cleanupMedia() {
     stopMicrophone();
     resetPeer();
     if (state.remoteAudio) {
-        try { state.remoteAudio.srcObject = null; } catch { /* ignore */ }
+        try { state.remoteAudio.srcObject = null; } catch {}
     }
     clearCallTimers();
     stopTones();
@@ -664,10 +617,6 @@ function peerFromCall(call) {
         avatar: user.avatar,
     } : null;
 }
-
-/* ------------------------------------------------------------------ */
-/* Public actions                                                      */
-/* ------------------------------------------------------------------ */
 
 async function startCall(peer) {
     if (!peer?.id) return;
@@ -772,17 +721,14 @@ async function acceptCall() {
             }
         }, RECONNECT_TIMEOUT);
     } catch (error) {
-        // Another tab answered first, or the ring timed out. The winning tab
-        // owns the call; this one just goes back to idle.
         if (error.status === 409 || error.status === 410) {
             reset();
             return;
         }
 
-        // Microphone denied: the call was never accepted. Tell the caller.
         try {
             await request(`/api/calls/${state.call.id}/reject`, { method: 'POST' });
-        } catch { /* ignore */ }
+        } catch {}
 
         finishLocal(friendlyError(error), 'ended');
         scheduleReset(6000);
@@ -843,24 +789,19 @@ async function setOutputDevice(deviceId) {
         await audio.setSinkId(deviceId || '');
         try {
             localStorage.setItem(`incognito-speaker-device-${myId()}`, deviceId || '');
-        } catch { /* ignore */ }
+        } catch {}
         return true;
     } catch {
         return false;
     }
 }
 
-/** Settings changes apply to the next ring without a page reload. */
 function setRingtone(enabled, volume) {
     state.ringtoneEnabled = enabled !== false;
     const next = Number(volume);
     if (Number.isFinite(next)) state.ringtoneVolume = Math.max(0, Math.min(100, next));
     if (!state.ringtoneEnabled) stopTones();
 }
-
-/* ------------------------------------------------------------------ */
-/* Socket / browser lifecycle                                          */
-/* ------------------------------------------------------------------ */
 
 async function loadConfig() {
     if (state.configLoaded) return;
@@ -965,7 +906,6 @@ function onAccept(event) {
 
     if (state.role === 'callee') {
         if (acceptedTab && acceptedTab !== state.tabId) {
-            // Another tab answered; this one must stop ringing silently.
             cleanupMedia();
             state.call = null;
             state.role = null;
@@ -1041,8 +981,6 @@ function onEnd(event) {
 }
 
 function onBusy(event) {
-    // Busy/unavailable is only meaningful to the tab that placed the call.
-    // Other tabs of the caller are idle and must stay quiet.
     if (store()?.status !== 'calling') return;
 
     const call = event?.call;
@@ -1068,9 +1006,6 @@ function onBusy(event) {
 function onConnectionState(states) {
     if (!state.call) return;
 
-    // The WebSocket and the peer-to-peer audio are independent. A dropped
-    // socket does not mean the call is broken, so only use the reconnect
-    // event to recover a UI that is already waiting to reconnect.
     if (states.current !== 'connected') return;
 
     if (store()?.status === 'reconnecting') {
@@ -1090,7 +1025,6 @@ function onPageHide() {
     if (['active', 'connecting', 'reconnecting'].includes(status)) {
         beacon(url('end'), { reason: 'disconnect' });
     } else if (status === 'incoming') {
-        // Only this ringing tab disappears; other tabs may still ring.
         beacon(url('leave'), { tab_id: state.tabId });
     } else if (status === 'calling' || status === 'ringing') {
         beacon(url('cancel'));
@@ -1099,7 +1033,6 @@ function onPageHide() {
     cleanupMedia();
 }
 
-/** A back/forward-cache restore has no live WebRTC objects anymore. */
 function onPageShow(event) {
     if (event.persisted && state.call) reset();
 }
@@ -1155,14 +1088,14 @@ function destroy() {
             '.call:cancel', '.call:busy', '.call:offer', '.call:answer',
             '.call:ice-candidate', '.call:end',
         ].forEach((event) => {
-            try { state.channel.stopListening(event); } catch { /* ignore */ }
+            try { state.channel.stopListening(event); } catch {}
         });
         state.channel = null;
     }
 
     const connection = window.Echo?.connector?.pusher?.connection;
     if (connection && state.connectionHandler) {
-        try { connection.unbind('state_change', state.connectionHandler); } catch { /* ignore */ }
+        try { connection.unbind('state_change', state.connectionHandler); } catch {}
     }
     state.connectionHandler = null;
 
@@ -1171,10 +1104,6 @@ function destroy() {
     state.initialized = false;
 }
 
-/**
- * Read-only, serializable snapshot used by the development-only diagnostics
- * panel. Never returns native WebRTC objects to Alpine.
- */
 export async function getDiagnostics() {
     const connection = window.Echo?.connector?.pusher?.connection;
 
@@ -1182,7 +1111,7 @@ export async function getDiagnostics() {
     try {
         const result = await navigator.permissions?.query?.({ name: 'microphone' });
         micPermission = result?.state || 'unknown';
-    } catch { /* browsers without the query keep 'unknown' */ }
+    } catch {}
 
     let candidateType = null;
     const pc = state.pc;
@@ -1209,11 +1138,9 @@ export async function getDiagnostics() {
                 candidateType = [local?.candidateType, remote?.candidateType]
                     .filter(Boolean).join(' / ') || null;
             }
-        } catch { /* stats are best-effort */ }
+        } catch {}
     }
 
-    // Build the URL from Echo's own config rather than a possibly stale
-    // socket object, so the panel reflects the active configuration.
     const echoConfig = window.Echo?.connector?.pusher?.config;
     const echoUrl = echoConfig
         ? `${echoConfig.forceTLS ? 'wss' : 'ws'}://${echoConfig.wsHost}:${echoConfig.wsPort || echoConfig.wssPort}${echoConfig.path || '/app'}`

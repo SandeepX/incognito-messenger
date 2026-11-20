@@ -2,19 +2,6 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | WebRTC ICE servers
-    |--------------------------------------------------------------------------
-    |
-    | STUN is enough on the same LAN. Calls between different networks need a
-    | TURN relay. Credentials are read from the environment and sent to
-    | authenticated browsers through /api/calls/config, never committed.
-    |
-    | WEBRTC_STUN_URLS / WEBRTC_TURN_URLS accept a comma-separated list.
-    |
-    */
-
     'ice_servers' => array_values(array_filter([
         [
             'urls' => array_values(array_filter(array_map(

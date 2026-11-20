@@ -8,10 +8,6 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Keeps every tab/device's bell badge in sync when a notification is read.
- * `notificationId` is null when all notifications were marked read.
- */
 class NotificationRead implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;

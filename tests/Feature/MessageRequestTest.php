@@ -20,11 +20,9 @@ it('lets a non-friend send a request that stays hidden until accepted', function
         'status' => 'pending',
     ]);
 
-    // Neither participant sees it in the normal chat list while pending.
     $this->assertCount(0, $this->actingAs($alice)->getJson('/api/conversations')->json());
     $this->assertCount(0, $this->actingAs($bob)->getJson('/api/conversations')->json());
 
-    // Only the two participants may preview it.
     $requestId = $response->json('id');
     $this->actingAs($eve)->getJson("/api/message-requests/{$requestId}")->assertForbidden();
     $preview = $this->actingAs($bob)->getJson("/api/message-requests/{$requestId}")->assertOk()->json();
@@ -36,12 +34,10 @@ it('lets a non-friend send a request that stays hidden until accepted', function
     $sentPreview = $this->actingAs($alice)->getJson("/api/message-requests/{$requestId}")->assertOk()->json();
     $this->assertSame('sent', $sentPreview['direction']);
 
-    // Non-friends cannot send unrestricted messages in the hidden thread.
     $this->actingAs($alice)
         ->postJson("/api/conversations/{$conversationId}/messages", ['body' => 'again'])
         ->assertForbidden();
 
-    // Only the recipient may accept.
     $this->actingAs($eve)->postJson("/api/message-requests/{$requestId}/accept")->assertForbidden();
     $this->actingAs($bob)->postJson("/api/message-requests/{$requestId}/accept")
         ->assertOk()->assertJsonPath('status', 'accepted');
@@ -52,7 +48,6 @@ it('lets a non-friend send a request that stays hidden until accepted', function
     $this->assertCount(1, $this->actingAs($alice)->getJson('/api/conversations')->json());
     $this->assertCount(1, $this->actingAs($bob)->getJson('/api/conversations')->json());
 
-    // Now normal messaging works both ways.
     $this->actingAs($bob)->postJson("/api/conversations/{$conversationId}/messages", ['body' => 'Hello!'])
         ->assertCreated();
     $this->actingAs($alice)->postJson("/api/conversations/{$conversationId}/messages", ['body' => 'Hi!'])
@@ -71,7 +66,6 @@ it('prevents a deleted request from continuing and rejects duplicates', function
         'user_id' => $bob->id, 'body' => 'Again',
     ])->assertStatus(422);
 
-    // The sender may not delete someone else's incoming request.
     $this->actingAs($alice)
         ->postJson("/api/message-requests/{$first->json('id')}/delete")
         ->assertForbidden();
@@ -114,5 +108,5 @@ it('lets a sender cancel their own request', function () {
 
     $this->assertSame('cancelled', MessageRequest::first()->status);
     $this->assertDatabaseHas('conversations', ['id' => $request->json('conversation_id')]);
-    $this->assertSame(1, Conversation::count()); // history is kept
+    $this->assertSame(1, Conversation::count());
 });

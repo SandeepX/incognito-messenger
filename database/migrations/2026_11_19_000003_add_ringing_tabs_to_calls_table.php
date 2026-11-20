@@ -9,8 +9,6 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('calls', function (Blueprint $table) {
-            // Every callee tab that is currently ringing. Closing one tab
-            // must not stop the ring while another tab is still available.
             $table->json('ringing_tabs')->nullable()->after('callee_tab_id');
         });
     }

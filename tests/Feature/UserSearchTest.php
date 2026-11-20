@@ -13,8 +13,6 @@ it('filters every exclusion on the server for find-friends', function () {
 
     $this->befriend($me, $friend);
 
-    // Seed threads directly: a shared chat excludes a user regardless of
-    // whether the friendship was ever accepted.
     $direct = Conversation::create([
         'type' => 'direct',
         'direct_key' => Conversation::directKey($me->id, $chatter->id),

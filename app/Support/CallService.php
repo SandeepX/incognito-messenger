@@ -12,15 +12,10 @@ use App\Models\Message;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Server-side call state. Every transition is persisted so a second tab,
- * a reconnect, or the stale-call sweeper can make the same decision.
- */
 final class CallService
 {
     public const RING_TIMEOUT_SECONDS = 30;
 
-    /** @return array<int, array<string, mixed>> */
     public static function iceServers(): array
     {
         $servers = config('webrtc.ice_servers', []);
@@ -28,7 +23,6 @@ final class CallService
         return is_array($servers) ? array_values($servers) : [];
     }
 
-    /** A user may only be ringing or active in one call at a time. */
     public static function activeCallFor(int $userId): ?Call
     {
         self::expireRingingCalls();
@@ -42,10 +36,6 @@ final class CallService
             ->first();
     }
 
-    /**
-     * Lazy safety net for callers/callees who close every tab. The browser
-     * also fires the 30s timeout, but this keeps state correct even then.
-     */
     public static function expireRingingCalls(): int
     {
         $stale = Call::query()
@@ -66,10 +56,6 @@ final class CallService
         return $expired;
     }
 
-    /**
-     * Move a ringing/active call to a terminal status exactly once and
-     * write its history message. Callers broadcast the matching event.
-     */
     public static function finish(
         Call $call,
         string $status,
@@ -86,9 +72,6 @@ final class CallService
             ? max(0, (int) $call->answered_at->diffInSeconds(now()))
             : null;
 
-        // A single conditional UPDATE makes the transition atomic. Without it
-        // a cancel and an accept racing each other could both observe
-        // "ringing" and the loser would overwrite a terminal status.
         $updated = Call::query()
             ->whereKey($call->id)
             ->whereIn('status', ['ringing', 'active'])
@@ -115,10 +98,6 @@ final class CallService
         return $call->fresh();
     }
 
-    /**
-     * Remember a callee tab that started ringing. Returns true only for the
-     * first tab, so the caller receives a single "Ringing..." transition.
-     */
     public static function registerRingingTab(Call $call, string $tabId): bool
     {
         return DB::transaction(function () use ($call, $tabId) {
@@ -143,10 +122,6 @@ final class CallService
         });
     }
 
-    /**
-     * A ringing tab went away. Other tabs keep ringing; the call only ends
-     * once the last ringing tab is gone.
-     */
     public static function leaveRinging(Call $call, int $userId, ?string $tabId): ?Call
     {
         return DB::transaction(function () use ($call, $userId, $tabId) {
@@ -160,7 +135,6 @@ final class CallService
             if ($tabId !== null) {
                 $tabs = array_values(array_filter($tabs, fn ($id) => $id !== $tabId));
             } elseif ($tabs !== []) {
-                // A disconnect without a tab id cannot tell which tab vanished.
                 return null;
             }
 
@@ -174,15 +148,6 @@ final class CallService
         });
     }
 
-    /**
-     * Server-side disconnect safety net. The browser normally calls /end,
-     * /reject or /cancel from pagehide; this covers tabs that vanish before
-     * the request leaves (crash, killed process, lost network).
-     *
-     * A closing tab may only end a call it actually owns. Without this check
-     * closing a second tab of the same user would hang up the first tab's
-     * active call.
-     */
     public static function endForUser(int $userId, ?string $tabId = null, string $reason = 'disconnect'): void
     {
         $call = self::activeCallFor($userId);
@@ -192,7 +157,6 @@ final class CallService
 
         if ($tabId !== null) {
             if ($call->isRinging()) {
-                // The caller owns the ring from the tab that sent the invite.
                 if ((int) $call->caller_id === $userId
                     && $call->caller_tab_id !== null
                     && $call->caller_tab_id !== $tabId) {
@@ -234,7 +198,6 @@ final class CallService
         ]);
     }
 
-    /** Find or create the direct conversation that owns the call history. */
     public static function directConversation(User $a, User $b): Conversation
     {
         $key = Conversation::directKey((int) $a->id, (int) $b->id);

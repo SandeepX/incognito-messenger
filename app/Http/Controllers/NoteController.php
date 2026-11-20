@@ -32,7 +32,6 @@ class NoteController extends Controller
         ];
     }
 
-    /** Active notes from me and friends who allow me to see their notes. */
     public function index(Request $request): JsonResponse
     {
         $me = auth()->user()->loadMissing('profile');
@@ -68,7 +67,6 @@ class NoteController extends Controller
             'content' => ['required', 'string', 'max:60'],
         ]);
 
-        // One active note per person: replace it instead of stacking duplicates.
         $note = DB::transaction(function () use ($data) {
             Note::where('user_id', auth()->id())->active()->delete();
 
@@ -119,7 +117,6 @@ class NoteController extends Controller
         return response()->json(['status' => 'deleted']);
     }
 
-    /** Keep friends' note clouds and avatar indicators in sync in realtime. */
     private function notifyFriends(string $type, Note $note, bool $forceVisible = false): void
     {
         $user = auth()->user()->loadMissing('profile');

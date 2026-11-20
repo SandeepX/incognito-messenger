@@ -47,7 +47,6 @@ class Conversation extends Model
         return $this->hasOne(MessageRequest::class);
     }
 
-    /** True while this thread is still an unaccepted message request. */
     public function isPendingRequest(): bool
     {
         return $this->messageRequest()->where('status', 'pending')->exists();
@@ -55,7 +54,6 @@ class Conversation extends Model
 
     public static function directKey(int $a, int $b): string
     {
-        // Sorted so Alice→Bob and Bob→Alice resolve to the same thread.
         $ids = [$a, $b];
         sort($ids);
 

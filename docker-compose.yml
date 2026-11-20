@@ -1,12 +1,6 @@
-# Incognito Messenger — full Docker stack:
-#   nginx (8000) → PHP-FPM (internal) → SQLite (named volume)
-#   Reverb (8080) → browser WebSocket connections
 name: incognito-messenger
 
 services:
-  # ---------------- MinIO: private S3-compatible object storage ----------------
-  # Built locally because the official minio/minio image is no longer public;
-  # the image is identical MinIO server from the Alpine package repository.
   minio:
     build:
       context: ./docker/minio
@@ -16,8 +10,6 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      # 9000/9001 are used by another local service on this machine, so the
-      # host ports are shifted. Inside the network MinIO still uses 9000.
       - "19000:9000"
       - "19001:9001"
     volumes:
@@ -30,7 +22,6 @@ services:
     networks:
       - messenger
 
-  # ---------------- One-shot: create the private bucket ----------------
   minio-init:
     build:
       context: ./docker/minio
@@ -50,9 +41,6 @@ services:
     networks:
       - messenger
 
-  # ---------------- One-shot: create schema + seed demo accounts ----------------
-  # app, reverb and webserver wait for this to exit successfully, so
-  # Reverb never races the first migration (SQLite file + tables).
   migrate:
     image: incognito-messenger-app
     entrypoint: ["sh", "-c", "php artisan migrate --force --seed --no-interaction"]
@@ -67,9 +55,6 @@ services:
     networks:
       - messenger
 
-  # ---------------- One-shot: copy built frontend assets ----------------
-  # nginx has no application code baked in, so a one-shot service copies
-  # the built JS/CSS from the app image into a shared volume nginx mounts.
   assets:
     image: incognito-messenger-app
     entrypoint: ["sh", "-c", "rm -rf /out/* && cp -a /var/www/public/. /out/"]
@@ -79,26 +64,17 @@ services:
     networks:
       - messenger
 
-  # ---------------- PHP-FPM: Laravel application ----------------
   app:
     build:
       context: .
       args:
-        # The browser derives host, port and TLS from window.location at
-        # runtime (see resources/js/echo.js), so no WS port is baked into the
-        # bundle. The key is interpolated from .env automatically.
         VITE_REVERB_APP_KEY: ${REVERB_APP_KEY}
     image: incognito-messenger-app
     env_file: .env
     environment:
-      # Server-to-server traffic (Laravel → Reverb) must use the Docker
-      # service name, NOT localhost: inside the network, localhost is the
-      # container itself. This causes "cURL error 7 ... Failed to connect".
       REVERB_HOST: reverb
       APP_URL: ${APP_URL}
       CACHE_STORE: file
-      # SQLite lives in storage/db (a directory volume works; a file-path
-      # volume mount does not). env var overrides .env.
       DB_DATABASE: /var/www/storage/db/database.sqlite
     depends_on:
       migrate:
@@ -106,13 +82,10 @@ services:
       minio-init:
         condition: service_completed_successfully
     volumes:
-      # Only the sqlite file lives here — migrations/ stays untouched in
-      # the image, so code changes are never shadowed by the volume.
       - db-data:/var/www/storage/db
     networks:
       - messenger
 
-  # ---------------- Nginx: serves the PHP app on port 8000 ----------------
   webserver:
     image: nginx:alpine
     depends_on:
@@ -128,10 +101,6 @@ services:
     networks:
       - messenger
 
-  # ---------------- Reverb: the actual WebSocket server ----------------
-  # Same image as `app`, different process. It only listens for
-  # WebSocket connections; all its config (id/key/secret) comes from
-  # env_file .env.
   reverb:
     image: incognito-messenger-app
     entrypoint: ["php", "artisan", "reverb:start", "--host=0.0.0.0"]
@@ -146,10 +115,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     ports:
-      # Exposed so browsers on your machine can open ws://localhost:8080
       - "8080:8080"
-    # Reverb reads the cache/session tables, so it needs the SAME SQLite
-    # file as the app (without this, it sees an empty file and crashes).
     volumes:
       - db-data:/var/www/storage/db
     networks:

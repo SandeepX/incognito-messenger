@@ -7,9 +7,6 @@ use App\Models\UserProfile;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
-/**
- * @extends Factory<UserProfile>
- */
 class UserProfileFactory extends Factory
 {
     protected $model = UserProfile::class;
@@ -38,7 +35,6 @@ class UserProfileFactory extends Factory
         ];
     }
 
-    /** Do not expose presence/last-active to friends. */
     public function hiddenPresence(): static
     {
         return $this->state(fn () => ['show_active_status' => false]);

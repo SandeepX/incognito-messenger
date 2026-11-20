@@ -6,12 +6,6 @@ use Illuminate\Support\Facades\DB;
 
 class UnreadCounter
 {
-    /**
-     * Unread message counts per conversation for one user, in a single
-     * grouped query (no per-conversation round trips).
-     *
-     * @return array<int, int> conversation_id => unread count
-     */
     public static function for(int $userId): array
     {
         return DB::table('messages')
@@ -19,8 +13,6 @@ class UnreadCounter
             ->where('cp.user_id', $userId)
             ->where('messages.sender_id', '!=', $userId)
             ->where('messages.is_unsent', false)
-            // Call-history rows are system messages: they never create an
-            // unread badge or a read receipt.
             ->where('messages.type', '!=', 'call')
             ->where(function ($query) use ($userId) {
                 $query->whereNull('messages.deleted_for')

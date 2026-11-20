@@ -1,13 +1,6 @@
 import './echo';
 import './call-ui';
 
-/*
- * Incognito Messenger — browser application.
- *
- * HTTP (fetch)  : search, history, sending, group management
- * WebSocket     : presence, live messages, unread badges, typing whispers
- */
-
 const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.content;
 const $ = (id) => document.getElementById(id);
 const csrf = () => meta('csrf-token');
@@ -39,7 +32,7 @@ const state = {
     },
     conversations: [],
     conversationsLoaded: false,
-    active: null,          // {id, type, group_id, peer_id, peer_username, name, avatar, subtitle, note, has_note}
+    active: null,
     activeMessages: [],
     messagesLoading: false,
     activeChannel: null,
@@ -88,7 +81,7 @@ function loadMutedSet() {
 function persistMutedSet() {
     try {
         localStorage.setItem(`incognito-muted-${state.me.id}`, JSON.stringify([...state.muted]));
-    } catch { /* ignore */ }
+    } catch {}
 }
 
 function isConvMuted(id) {
@@ -107,9 +100,6 @@ const debounce = (fn, ms) => {
     };
 };
 
-/* ================================================================
- * Avatar fallback — never show broken/alt text, stable color per username
- * ================================================================ */
 function avatarFallbackSrc(name, key) {
     const display = String(name ?? '').trim() || '?';
     const seed = String(key ?? display).trim() || display;
@@ -134,7 +124,6 @@ function applyAvatarFallback(img) {
     img.src = avatarFallbackSrc(name, key);
 }
 
-// Image error events do not bubble, so listen in the capture phase.
 document.addEventListener('error', (event) => {
     const img = event.target;
     if (img instanceof HTMLImageElement && img.classList.contains('avatar')) {
@@ -171,9 +160,6 @@ function avatarImg(src, name, username, extraClass = '', extraAttrs = '') {
     return `<img class="${cls}" src="${esc(effectiveSrc)}" alt="" data-name="${safeName}" data-username="${safeUser}" loading="lazy" decoding="async" ${extraAttrs}>`;
 }
 
-/* ================================================================
- * HTTP / UI helpers
- * ================================================================ */
 async function api(url, options = {}) {
     const { headers = {}, ...rest } = options;
 
@@ -192,7 +178,7 @@ async function api(url, options = {}) {
             const body = await response.json();
             const firstError = body.errors ? Object.values(body.errors)[0]?.[0] : null;
             message = firstError ?? body.message ?? message;
-        } catch { /* keep the generic message */ }
+        } catch {}
         throw new Error(message);
     }
 
@@ -322,9 +308,6 @@ function usernameFromSubtitle(subtitle) {
     return '';
 }
 
-/* ================================================================
- * Presence
- * ================================================================ */
 function presenceInfo(userId) {
     const id = Number(userId);
     if (!id) return { online: false, label: '' };
@@ -348,7 +331,7 @@ function updatePresenceUI() {
 }
 
 async function heartbeat() {
-    try { await api('/api/presence/heartbeat', { method: 'POST' }); } catch { /* ignore */ }
+    try { await api('/api/presence/heartbeat', { method: 'POST' }); } catch {}
 }
 
 async function loadPresence() {
@@ -356,7 +339,7 @@ async function loadPresence() {
         const users = await api('/api/presence');
         users.forEach((user) => state.presence.set(Number(user.id), user));
         updatePresenceUI();
-    } catch { /* keep last known */ }
+    } catch {}
 }
 
 window.Echo.join('online')
@@ -392,7 +375,7 @@ function disconnectPresence() {
             _token: csrf(),
             tab_id: window.incognitoCalls?.tabId || '',
         }));
-    } catch { /* best-effort */ }
+    } catch {}
 }
 
 setInterval(() => {
@@ -400,9 +383,6 @@ setInterval(() => {
     loadPresence();
 }, 30000);
 
-/* ================================================================
- * Sounds
- * ================================================================ */
 const sounds = {};
 try {
     for (const [kind, path] of Object.entries({
@@ -412,7 +392,7 @@ try {
         sounds[kind] = new Audio(path);
         sounds[kind].preload = 'auto';
     }
-} catch { /* optional */ }
+} catch {}
 
 function playSound(kind) {
     if (!state.settings.messageSounds) return;
@@ -424,7 +404,7 @@ function playSound(kind) {
         sound.currentTime = 0;
         const promise = sound.play();
         if (promise?.catch) promise.catch(() => {});
-    } catch { /* autoplay blocked */ }
+    } catch {}
 }
 
 function unlockAudio() {
@@ -437,7 +417,7 @@ function unlockAudio() {
             sound.pause();
             sound.currentTime = 0;
             sound.volume = volume;
-        } catch { /* ignore */ }
+        } catch {}
     });
 }
 
@@ -461,9 +441,6 @@ function shouldPlayReceivedSound(message) {
     return !activeChatFocused;
 }
 
-/* ================================================================
- * Icons / ticks
- * ================================================================ */
 const ICON_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5 9 17.5 20 6.5"/></svg>';
 const ICON_DOUBLE_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12.5 7 17.5 17.5 7"/><path d="M9 12.5 14 17.5 22 8.5"/></svg>';
 
@@ -489,9 +466,6 @@ function setStatusTicks(row, seen) {
     holder.innerHTML = `${seen ? ICON_DOUBLE_CHECK : ICON_CHECK}<span class="sr-only">${label}</span>`;
 }
 
-/* ================================================================
- * Scroll helpers
- * ================================================================ */
 function isNearBottom(threshold = 80) {
     const box = $('messages');
     if (!box) return true;
@@ -536,9 +510,6 @@ function scrollToLatestRow(smooth = false) {
     updateJumpLatest();
 }
 
-/* ================================================================
- * Skeletons / empty states
- * ================================================================ */
 function renderChatListSkeleton() {
     const list = $('conversation-list');
     if (!list) return;
@@ -570,9 +541,6 @@ function renderMessageSkeleton() {
         </div>`;
 }
 
-/* ================================================================
- * Sidebar tabs / menus
- * ================================================================ */
 function activateSideTab(name) {
     state.sideTab = name;
     ['chats', 'requests', 'friends'].forEach((tab) => {
@@ -692,7 +660,6 @@ async function markRequestsSeen() {
     try {
         await api('/api/requests/seen', { method: 'POST' });
     } catch (error) {
-        // refresh to stay in sync if the optimistic clear was wrong
         loadRequests({ showLoading: false });
         console.warn('mark requests seen failed', error);
     }
@@ -849,9 +816,6 @@ function activateRequestsSubTab(name, opts = {}) {
     }
 }
 
-/* ================================================================
- * Notes
- * ================================================================ */
 async function loadNotes() {
     try {
         const page = await api('/api/notes');
@@ -875,7 +839,6 @@ function isActiveNote(note) {
     return !Number.isFinite(expiresAt) || expiresAt > Date.now();
 }
 
-/** Re-render when a note crosses its 24h expiry, without a page reload. */
 function scheduleNotesExpiry() {
     clearTimeout(notesExpiryTimer);
 
@@ -896,7 +859,6 @@ function scheduleNotesExpiry() {
     }, Math.max(delay, 1000));
 }
 
-/** Show soft fade edges only while the row is horizontally scrollable. */
 function updateNotesScrollState() {
     const strip = $('notes-strip');
     const list = $('notes-list');
@@ -921,7 +883,6 @@ function noteAriaLabel(note, name) {
         : `${name}’s note: ${note.content}`;
 }
 
-/** Single reusable item used for both my note and friends' notes. */
 function noteItemHtml(note, user, isMine) {
     const name = user.name || 'Friend';
     const label = isMine
@@ -961,7 +922,6 @@ function renderNotes() {
         .filter((note) => !note.is_mine)
         .sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
 
-    // My item is always first so there is always a way to add or edit a note.
     let html = noteItemHtml(mine, state.me, true);
     others.forEach((note) => {
         html += noteItemHtml(note, note.user || {}, false);
@@ -1081,9 +1041,6 @@ async function deleteNote() {
     }
 }
 
-/* ================================================================
- * Conversations
- * ================================================================ */
 function peerKeyForConversation(c) {
     if (c?.type !== 'direct') return `group:${c?.group_id ?? c?.id}`;
     return c.peer_username || usernameFromSubtitle(c.subtitle) || c.peer_id || c.name;
@@ -1094,7 +1051,6 @@ async function loadConversations() {
         state.conversations = await api('/api/conversations');
         state.conversationsLoaded = true;
 
-        // Normalize helper fields
         state.conversations.forEach((c) => {
             if (c.type === 'direct') {
                 c.peer_username = c.peer_username || usernameFromSubtitle(c.subtitle);
@@ -1125,9 +1081,6 @@ function applyUnreadCounts(counts) {
     renderConversationList();
 }
 
-/* ================================================================
- * Seen receipts for live messages
- * ================================================================ */
 const seenRequests = { inFlight: new Set(), queued: new Set() };
 
 async function markConversationSeen(id) {
@@ -1144,7 +1097,6 @@ async function markConversationSeen(id) {
         const result = await api(`/api/conversations/${conversationId}/seen`, { method: 'POST' });
         if (result?.counts) applyUnreadCounts(result.counts);
     } catch {
-        // Best-effort: the next focus/open will try again.
     } finally {
         seenRequests.inFlight.delete(conversationId);
         if (seenRequests.queued.delete(conversationId)) {
@@ -1158,7 +1110,6 @@ async function markMessageSeen(id) {
         const result = await api(`/api/messages/${id}/seen`, { method: 'POST' });
         if (result?.unread_counts) applyUnreadCounts(result.unread_counts);
     } catch {
-        // Best-effort; the batch seen endpoint on focus is the safety net.
     }
 }
 
@@ -1172,7 +1123,6 @@ window.addEventListener('focus', maybeMarkActiveConversationSeen);
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     maybeMarkActiveConversationSeen();
-    // Background timers are throttled, so prune expired notes on return.
     if (state.notes.some((note) => !isActiveNote(note))) {
         renderNotes();
         loadConversations();
@@ -1244,9 +1194,6 @@ function openConversationById(id) {
     openConversation(Number(id));
 }
 
-/* ================================================================
- * Friends & Requests
- * ================================================================ */
 function renderFriends() {
     const list = $('friend-list');
     if (!list) return;
@@ -1570,9 +1517,6 @@ async function handleRequestAction(action, kind, id) {
     }
 }
 
-/* ================================================================
- * Find friends modal & search
- * ================================================================ */
 async function searchFindFriends(query) {
     const box = $('friend-results');
     if (!box) return;
@@ -1625,9 +1569,6 @@ async function handleFindMessageUser(user) {
     }
 }
 
-/* ================================================================
- * Chat header / info / mute / search-in-chat
- * ================================================================ */
 function updateMuteButton() {
     const btn = $('chat-mute-btn');
     if (!btn) return;
@@ -1669,7 +1610,6 @@ function updateChatHeader() {
     syncChatCallButton();
 }
 
-/** Bridge the existing vanilla chat state into the Alpine call button. */
 function syncChatCallButton() {
     if (!state.active || state.active.type !== 'direct' || !state.active.peer_id) {
         window.__incognitoChatPeer = null;
@@ -1690,8 +1630,6 @@ function syncChatCallButton() {
         blocked: !!state.active.blocked,
     };
 
-    // Alpine may initialize after the first conversation is opened; keep the
-    // latest value so the button can hydrate itself.
     window.__incognitoChatPeer = detail;
     window.dispatchEvent(new CustomEvent('chat-peer-changed', { detail }));
 }
@@ -1760,7 +1698,6 @@ function applyChatSearchFilter() {
             }
         }
     });
-    // show all date separators/groups if searching? keep simple: separators remain visible
 }
 
 function highlightText(text, q) {
@@ -1774,9 +1711,6 @@ function highlightText(text, q) {
     return `${esc(before)}<mark class="chat-highlight">${esc(mid)}</mark>${highlightText(after, q)}`;
 }
 
-/* ================================================================
- * Messages rendering
- * ================================================================ */
 function attachmentHtml(message) {
     const items = message.attachments ?? [];
     if (!items.length) return '';
@@ -1837,7 +1771,7 @@ function buildMessageRow(message, opts = {}) {
     const showAvatar = !mine && isLastInGroup;
     const showSpacer = !mine && !isLastInGroup;
     const time = message.time ?? formatTime(message.created_at);
-    const showTime = isLastInGroup; // visible by default on last; others hover via CSS class
+    const showTime = isLastInGroup;
 
     const row = document.createElement('div');
     row.className = `msg-row ${mine ? 'mine' : 'theirs'} ${isLastInGroup ? 'last-in-group' : ''}`;
@@ -1864,7 +1798,6 @@ function buildMessageRow(message, opts = {}) {
         bubblePart = `${hasBody ? `<div class="bubble ${mine ? 'sent' : 'received'}"><span class="bubble-inner">${bodyText}${metaHtml}</span></div>` : ''}
             ${attachmentHtml(message)}
             ${!hasBody && metaHtml ? `<div class="bubble-meta ${showTime ? '' : 'hover-time'}" style="margin-top:2px">${time ? `<span class="msg-time" style="color:var(--muted)">${esc(time)}</span>` : ''}${ticks}</div>` : ''}`;
-        // If has body, meta is inside bubble. If no body (attachments only), render meta below.
     }
 
     const avatarCol = mine ? '' : (showAvatar
@@ -1884,7 +1817,6 @@ function buildMessagesFragment(messages) {
     const fragment = document.createDocumentFragment();
     let prev = null;
     let prevDay = null;
-    // precompute last-in-group flags
     const lastFlags = messages.map((m, i) => {
         const next = messages[i + 1];
         return !(next && canGroup(m, next));
@@ -1914,10 +1846,8 @@ function buildMessagesFragment(messages) {
         if (!grouped) {
             currentGroup = document.createElement('div');
             currentGroup.className = `msg-group ${mine ? 'mine' : 'theirs'}${fragment.childNodes.length ? ' group-gap' : ''}`;
-            // If previous sibling was a day-sep, don't double large gap; group-gap is fine
             fragment.appendChild(currentGroup);
         } else {
-            // ensure class reflects sender (same)
             currentGroup.classList.toggle('mine', mine);
             currentGroup.classList.toggle('theirs', !mine);
         }
@@ -1934,7 +1864,6 @@ function renderMessages() {
     if (!box) return;
     box.innerHTML = '';
     if (!state.activeMessages.length) {
-        // empty conversation - keep area empty (composer/empty states handled elsewhere)
     } else {
         box.appendChild(buildMessagesFragment(state.activeMessages));
     }
@@ -1959,7 +1888,6 @@ function rerenderMessagesPreserveScroll() {
 }
 
 function appendMessageToState(message, { rerender = true, scroll = true } = {}) {
-    // Avoid duplicates
     if (state.activeMessages.some((m) => Number(m.id) === Number(message.id))) return null;
     state.activeMessages.push(message);
     if (rerender) {
@@ -2001,8 +1929,6 @@ function updateSidebarForUnsent(id, event) {
         attachments: [],
         seen_by: [],
         status: 'unsent',
-        // Wording is per-viewer ("You" vs the sender's name), so never reuse
-        // the broadcast preview that was rendered with a null viewer.
         preview: unsentPreviewFor(payload),
     };
     renderConversationList();
@@ -2025,7 +1951,6 @@ function applyUnsent(event) {
         const local = state.activeMessages.find((m) => Number(m.id) === id);
         if (local) {
             if (event.message) {
-                // Replace in place: same array index, id, createdAt, sort key.
                 Object.assign(local, event.message);
                 local.preview = unsentPreviewFor(local);
             } else {
@@ -2093,9 +2018,6 @@ function hideTypingIndicator() {
     hideTypingRow();
 }
 
-/* ================================================================
- * Open conversation / history / socket
- * ================================================================ */
 function handleAccessRevoked(conversationId) {
     if (state.active?.id !== conversationId) {
         loadConversations();
@@ -2196,7 +2118,6 @@ async function openConversation(id) {
     window.Echo.private(channel)
         .listen('.MessageSent', (message) => {
             if (shouldPlayReceivedSound(message)) playSound('received');
-            // update conversation preview/sidebar even if not active
             const conv = state.conversations.find((c) => c.id === message.conversation_id);
             if (conv) {
                 conv.last_message = message;
@@ -2316,9 +2237,6 @@ async function loadOlderMessages() {
     }
 }
 
-/* ================================================================
- * Composer
- * ================================================================ */
 function updateSendButton() {
     const input = $('message-input');
     const hasContent = Boolean(input?.value.trim()) || state.pendingAttachments.length > 0;
@@ -2401,7 +2319,7 @@ function uploadMessage(formData) {
                     const errorBody = JSON.parse(xhr.responseText);
                     const firstError = Object.values(errorBody.errors ?? {})[0]?.[0];
                     message = firstError ?? errorBody.message ?? message;
-                } catch { /* ignore */ }
+                } catch {}
                 reject(new Error(message));
             }
         });
@@ -2415,10 +2333,6 @@ function uploadMessage(formData) {
     });
 }
 
-/* Composer textarea grows with its content up to max-height (about 5-6
-   lines), then keeps that height and scrolls internally. Measuring with
-   height:auto avoids the sub-pixel overflow that used to force a scrollbar
-   on a single short line. */
 const COMPOSER_MAX_HEIGHT = 140;
 
 function autoGrowTextarea(el) {
@@ -2426,8 +2340,6 @@ function autoGrowTextarea(el) {
     el.style.overflowY = 'hidden';
     el.style.height = 'auto';
 
-    // A composer inside the not-yet-open chat view has no layout box; keep
-    // its natural one-row height instead of measuring 0 and collapsing.
     if (!el.offsetParent) {
         el.style.height = '';
         return;
@@ -2438,7 +2350,6 @@ function autoGrowTextarea(el) {
     el.style.overflowY = el.scrollHeight > COMPOSER_MAX_HEIGHT ? 'auto' : 'hidden';
 }
 
-/* Emoji picker */
 const EMOJIS = ['😀','😃','😄','😁','😅','😂','🤣','😊','😇','🙂','😉','😍','😘','😋','😎','🤗','🤔','😐','🙄','😴','😢','😭','😤','😡','👍','👎','👏','🙏','💪','🎉','🔥','❤️','💙','💚','✨','⭐','✅','❌','👀','💬','📎','📷','🎵','🚀','🌙','☀️','🍕','☕'];
 
 function renderEmojiPicker() {
@@ -2447,9 +2358,6 @@ function renderEmojiPicker() {
     picker.innerHTML = EMOJIS.map((e) => `<button type="button" data-emoji="${e}" aria-label="${e}">${e}</button>`).join('');
 }
 
-/* ================================================================
- * Groups
- * ================================================================ */
 async function searchGroupMembers(query) {
     try {
         renderGroupMemberChoices(await api(`/api/users?q=${encodeURIComponent(query || '')}`));
@@ -2498,9 +2406,6 @@ async function loadGroupSettings(groupId) {
     }
 }
 
-/* ================================================================
- * Notifications
- * ================================================================ */
 function notificationText(event) {
     const d = event.data || {};
     switch (event.type) {
@@ -2582,7 +2487,6 @@ async function markNotificationRead(id) {
     const previousCount = state.notificationCount;
     markNotificationRowRead(row);
 
-    // Optimistic: one notification read means one fewer unread badge item.
     state.notificationCount = Math.max(0, previousCount - 1);
     updateNotificationBadge();
 
@@ -2598,9 +2502,6 @@ async function markNotificationRead(id) {
     }
 }
 
-/* ================================================================
- * Delete message dialog
- * ================================================================ */
 const DELETE_FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 function deleteDialogOpen() {
@@ -2730,8 +2631,6 @@ async function confirmDelete(mode) {
         const message = String(error?.message || 'Could not delete the message.');
         if ($('delete-error')) $('delete-error').textContent = message;
 
-        // The server may have discovered a seen receipt that our local
-        // snapshot had not received yet. Reflect the authoritative decision.
         if (/seen/i.test(message) && target.mine) {
             target.seen = true;
             target.message._deleteEveryoneBlocked = true;
@@ -2779,11 +2678,7 @@ function trapDeleteDialogFocus(event) {
     }
 }
 
-/* ================================================================
- * Event wiring
- * ================================================================ */
 function bindEvents() {
-    // Global dropdown/menus close
     document.addEventListener('click', (event) => {
         if (!event.target.closest('.menu-wrap')) closeDropdowns();
         if (!event.target.closest('.req-menu-wrap')) {
@@ -2799,22 +2694,18 @@ function bindEvents() {
         }
     });
 
-    // Profile/menu
     $('me-menu-btn')?.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu('me-menu-btn', 'me-menu'); });
     $('sidebar-add-btn')?.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu('sidebar-add-btn', 'sidebar-add-menu'); });
 
-    // Sidebar tabs
     $('side-tab-chats')?.addEventListener('click', () => activateSideTab('chats'));
     $('side-tab-requests')?.addEventListener('click', () => activateSideTab('requests'));
     $('side-tab-friends')?.addEventListener('click', () => activateSideTab('friends'));
 
-    // Sidebar chat search (filters existing chats)
     $('chat-search')?.addEventListener('input', debounce((e) => {
         state.chatFilter = e.target.value || '';
         renderConversationList();
     }, 150));
 
-    // Add menu actions
     $('find-friends-open-btn')?.addEventListener('click', () => {
         closeDropdowns();
         openFindFriendsModal();
@@ -2828,7 +2719,6 @@ function bindEvents() {
         $('group-name')?.focus();
     });
 
-    // Conversation list clicks
     $('conversation-list')?.addEventListener('click', (event) => {
         const item = event.target.closest('.conv-item[data-id]');
         if (item) openConversationById(item.dataset.id);
@@ -2839,10 +2729,8 @@ function bindEvents() {
         if (item) { event.preventDefault(); openConversationById(item.dataset.id); }
     });
 
-    // Back button (mobile)
     $('chat-back')?.addEventListener('click', () => hideChatView());
 
-    // Chat header actions
     $('chat-search-btn')?.addEventListener('click', () => setChatSearchOpen($('chat-search-wrap')?.hidden !== false));
     $('chat-search-close')?.addEventListener('click', () => setChatSearchOpen(false));
     $('chat-search-input')?.addEventListener('input', (e) => {
@@ -2868,7 +2756,6 @@ function bindEvents() {
         }
     });
 
-    // Messages scroll & jump
     $('messages')?.addEventListener('scroll', () => {
         if (isNearBottom()) state.unseen = 0;
         if ($('messages').scrollTop <= 60 && state.cursor) loadOlderMessages();
@@ -2879,7 +2766,6 @@ function bindEvents() {
         $('message-input')?.focus();
     });
 
-    // Composer
     $('composer')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (!state.active) return;
@@ -2932,12 +2818,10 @@ function bindEvents() {
         const now = Date.now();
         if (now - state.lastWhisperSent < 800) return;
         state.lastWhisperSent = now;
-        try { window.Echo.private(state.activeChannel).whisper('typing', { from: state.me.id }); } catch { /* ignore */ }
+        try { window.Echo.private(state.activeChannel).whisper('typing', { from: state.me.id }); } catch {}
     });
 
     $('message-input')?.addEventListener('paste', (event) => {
-        // The pasted value lands after the default action, so measure once
-        // the browser has committed it.
         const input = event.target;
         requestAnimationFrame(() => autoGrowTextarea(input));
     });
@@ -2978,7 +2862,6 @@ function bindEvents() {
         updateSendButton();
     });
 
-    // Messages clicks (call back, delete menu, lightbox)
     $('messages')?.addEventListener('click', async (event) => {
         const callBack = event.target.closest('[data-call-back]');
         if (callBack) {
@@ -3008,7 +2891,6 @@ function bindEvents() {
         }
     });
 
-    // Notes
     $('notes-list')?.addEventListener('click', async (event) => {
         const addBtn = event.target.closest('[data-note-action="add"]');
         if (addBtn) { openNoteEditor(state.notes.find((n) => n.is_mine && isActiveNote(n)) || null); return; }
@@ -3016,14 +2898,12 @@ function bindEvents() {
         if (!noteBtn) return;
         const note = state.notes.find((n) => String(n.id) === String(noteBtn.dataset.noteId));
         if (!note) return;
-        // Clicking a friend's note: open chat with them
         const userId = note.user?.id;
         if (userId) {
             const conv = state.conversations.find((c) => c.type === 'direct' && Number(c.peer_id) === Number(userId));
             if (conv) {
                 openConversation(conv.id);
             } else {
-                // try to start/open direct if friends
                 try {
                     const res = await api(`/api/conversations/direct/${userId}`, { method: 'POST' });
                     if (res?.id) { await loadConversations(); openConversation(res.id); }
@@ -3044,7 +2924,6 @@ function bindEvents() {
         }
     });
 
-    // Find friends modal
     $('friend-search')?.addEventListener('input', debounce((e) => searchFindFriends(e.target.value.trim()), 250));
     $('friend-results')?.addEventListener('click', (e) => {
         const addBtn = e.target.closest('[data-find-add]');
@@ -3052,10 +2931,9 @@ function bindEvents() {
         try {
             if (addBtn) sendFriendRequestTo(JSON.parse(addBtn.dataset.findAdd));
             else if (msgBtn) handleFindMessageUser(JSON.parse(msgBtn.dataset.findMessage));
-        } catch { /* ignore */ }
+        } catch {}
     });
 
-    // Friends actions
     $('friend-list')?.addEventListener('click', async (e) => {
         const msgBtn = e.target.closest('[data-friend-message]');
         const remBtn = e.target.closest('[data-friend-remove]');
@@ -3082,7 +2960,6 @@ function bindEvents() {
         }
     });
 
-    // Requests UI (sub-tabs, retry/empty states, actions, menus)
     $('requests-subtab-received')?.addEventListener('click', () => activateRequestsSubTab('received'));
     $('requests-subtab-sent')?.addEventListener('click', () => activateRequestsSubTab('sent'));
     $('requests-received-retry')?.addEventListener('click', () => loadRequests({ showLoading: true }));
@@ -3114,7 +2991,6 @@ function bindEvents() {
         if (!actionBtn) return;
         e.preventDefault();
         if (actionBtn.disabled || actionBtn.getAttribute('aria-disabled') === 'true') return;
-        // close menus before acting
         document.querySelectorAll('.req-menu:not([hidden])').forEach((m) => {
             m.hidden = true;
             m.closest('.req-menu-wrap')?.querySelector('[data-req-menu-toggle]')?.setAttribute('aria-expanded', 'false');
@@ -3127,7 +3003,6 @@ function bindEvents() {
     $('requests-panel-received')?.addEventListener('click', onRequestsClick);
     $('requests-panel-sent')?.addEventListener('click', onRequestsClick);
 
-    // Message request composer modal (send request to non-friend)
     $('request-send-btn')?.addEventListener('click', async () => {
         if (state.currentRequest?.mode !== 'compose') return;
         const user = state.currentRequest.user;
@@ -3151,11 +3026,6 @@ function bindEvents() {
         }
     });
 
-    // Friend request from find-friends note: send friend request directly
-    // (when picking a non-friend we open message request composer per requirements; friend requests also exist separately.
-    //  Provide a secondary flow: if modal open and we want friend request, we can support via button? The UI shows "Request" label for non-friends and clicking opens message request composer - which matches spec "start a conversation / request" flow. Friend-request endpoint is still available via other interactions if needed; not exposed separately in new simplified UI, but core flows work.)
-
-    // Group modal
     $('group-member-search')?.addEventListener('input', debounce((e) => searchGroupMembers(e.target.value.trim()), 250));
     $('group-members')?.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-member-id]');
@@ -3187,7 +3057,6 @@ function bindEvents() {
         } catch (error) { toast(error.message); }
     });
 
-    // Group settings
     $('settings-members')?.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-remove-member]');
         if (!btn || !state.settingsGroupId) return;
@@ -3248,7 +3117,6 @@ function bindEvents() {
         } catch (error) { toast(error.message); }
     });
 
-    // Notifications
     $('notification-btn')?.addEventListener('click', async () => {
         $('notifications-modal')?.classList.add('show');
         await loadNotifications();
@@ -3256,7 +3124,6 @@ function bindEvents() {
     $('notifications-read-btn')?.addEventListener('click', async () => {
         const previousCount = state.notificationCount;
 
-        // Optimistic: close immediately and clear the bell badge.
         state.notificationCount = 0;
         updateNotificationBadge();
         $('notifications-modal')?.classList.remove('show');
@@ -3297,7 +3164,6 @@ function bindEvents() {
         }
     });
 
-    // Delete message dialog
     $('delete-everyone-btn')?.addEventListener('click', () => confirmDelete('everyone'));
     $('delete-for-me-btn')?.addEventListener('click', () => confirmDelete('me'));
     $('delete-cancel-btn')?.addEventListener('click', () => closeDeleteDialog());
@@ -3306,7 +3172,6 @@ function bindEvents() {
     });
     document.addEventListener('keydown', trapDeleteDialogFocus);
 
-    // Modal close helpers
     document.querySelectorAll('[data-close]').forEach((button) => {
         button.addEventListener('click', () => $(button.dataset.close)?.classList.remove('show'));
     });
@@ -3317,9 +3182,6 @@ function bindEvents() {
     });
 }
 
-/* ================================================================
- * User channel & connection events
- * ================================================================ */
 window.Echo.private(`user.${state.me.id}`)
     .listen('.UnreadCountsUpdated', (event) => {
         applyUnreadCounts(event.counts);
@@ -3364,7 +3226,6 @@ window.Echo.private(`user.${state.me.id}`)
         }
     })
     .listen('.NoteChanged', () => {
-        // My note changed in another tab/device.
         loadNotes();
     });
 
@@ -3378,9 +3239,6 @@ window.Echo.connector.pusher.connection.bind('state_change', (states) => {
     }
 });
 
-/* ================================================================
- * Bootstrap
- * ================================================================ */
 function init() {
     renderNotesSkeleton();
     renderChatListSkeleton();
@@ -3396,7 +3254,6 @@ function init() {
     loadNotifications();
     activateSideTab('chats');
 
-    // Keep composer usable when viewport changes (mobile keyboard)
     window.visualViewport?.addEventListener('resize', () => {
         if (state.active && isNearBottom(120)) scrollToLatestRow();
     });

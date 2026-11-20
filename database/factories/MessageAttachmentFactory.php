@@ -6,9 +6,6 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends Factory<MessageAttachment>
- */
 class MessageAttachmentFactory extends Factory
 {
     protected $model = MessageAttachment::class;

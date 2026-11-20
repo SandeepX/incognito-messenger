@@ -1,8 +1,3 @@
-/* ============================================================
-   Audio calls — Alpine overlay + in-chat call history
-   Uses the theme variables defined by both app.css and the
-   settings layout, with fallbacks so it works on every page.
-   ============================================================ */
 
 [x-cloak] {
     display: none !important;
@@ -244,7 +239,6 @@
 
 .call-link-btn:hover { border-color: var(--accent, #0ea5e9); }
 
-/* Floating bar: keeps the call visible while browsing the app. */
 .call-mini {
     position: fixed;
     right: 18px;
@@ -359,7 +353,6 @@
     font-size: 12px;
 }
 
-/* In-chat system message */
 .call-msg-row {
     display: flex;
     justify-content: center;
@@ -414,7 +407,6 @@
 
 .call-back-btn:hover { text-decoration: underline; }
 
-/* Settings microphone meter */
 .mic-level {
     height: 8px;
     border-radius: 999px;
@@ -445,7 +437,6 @@
     }
 }
 
-/* Development-only connection diagnostics (APP_DEBUG=true). */
 .call-diagnostics {
     position: fixed;
     left: 12px;

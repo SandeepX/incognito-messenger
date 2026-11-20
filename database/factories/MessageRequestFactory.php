@@ -8,9 +8,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
-/**
- * @extends Factory<MessageRequest>
- */
 class MessageRequestFactory extends Factory
 {
     protected $model = MessageRequest::class;

@@ -8,9 +8,6 @@ use App\Models\MessageRead;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends Factory<Message>
- */
 class MessageFactory extends Factory
 {
     protected $model = Message::class;
@@ -26,7 +23,6 @@ class MessageFactory extends Factory
         ];
     }
 
-    /** A normal message with no recipient read receipt. */
     public function unseen(): static
     {
         return $this->state(fn () => [
@@ -35,7 +31,6 @@ class MessageFactory extends Factory
         ]);
     }
 
-    /** The recipient already read this message (a real message_reads row). */
     public function seen(): static
     {
         return $this->afterCreating(function (Message $message) {
@@ -49,7 +44,6 @@ class MessageFactory extends Factory
         });
     }
 
-    /** Sender detached the message for everyone; body and media are cleared. */
     public function unsent(): static
     {
         return $this->state(fn () => [

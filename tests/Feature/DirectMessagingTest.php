@@ -17,7 +17,6 @@ it('creates a unique direct conversation that is only visible to participants', 
 
     $id = dmTestHelperStartConversation($alice, $bob);
 
-    // Repeating the request must reuse the same thread.
     $this->actingAs($bob)
         ->postJson("/api/conversations/direct/{$alice->id}")
         ->assertOk()
@@ -26,18 +25,15 @@ it('creates a unique direct conversation that is only visible to participants', 
     $this->assertDatabaseCount('conversations', 1);
     $this->assertDatabaseCount('conversation_participants', 2);
 
-    // Outsiders cannot read history or write to it.
     $this->actingAs($eve)->getJson("/api/conversations/{$id}")->assertForbidden();
     $this->actingAs($eve)
         ->postJson("/api/conversations/{$id}/messages", ['body' => 'sneaky'])
         ->assertForbidden();
 
-    // Outsiders cannot subscribe to the private conversation channel.
     $this->assertFalse($this->channelAllows('conversation.{id}', $eve, $id));
     $this->assertTrue($this->channelAllows('conversation.{id}', $alice, $id));
     $this->assertTrue($this->channelAllows('conversation.{id}', $bob, $id));
 
-    // Per-user channels only accept their owner.
     $this->assertTrue($this->channelAllows('user.{id}', $alice, $alice->id));
     $this->assertFalse($this->channelAllows('user.{id}', $alice, $bob->id));
 
@@ -56,7 +52,6 @@ it('persists messages with the authenticated sender', function () {
         ->assertJsonPath('sender_id', $alice->id)
         ->assertJsonPath('sender_name', $alice->name);
 
-    // The sender cannot spoof someone else's identity.
     $this->actingAs($alice)
         ->postJson("/api/conversations/{$id}/messages", ['body' => 'fake', 'sender_id' => $bob->id])
         ->assertCreated()
@@ -87,16 +82,14 @@ it('increments unread counts and clears them on read', function () {
     $list = $this->actingAs($bob)->getJson('/api/conversations')->assertOk()->json();
     $this->assertSame(2, collect($list)->firstWhere('id', $id)['unread']);
 
-    // The sender never gets an unread badge for their own messages.
     $ownList = $this->actingAs($alice)->getJson('/api/conversations')->assertOk()->json();
     $this->assertSame(0, collect($ownList)->firstWhere('id', $id)['unread']);
 
-    // Opening the thread marks everything as read.
     $this->actingAs($bob)->getJson("/api/conversations/{$id}")->assertOk();
 
     $list = $this->actingAs($bob)->getJson('/api/conversations')->assertOk()->json();
     $this->assertSame(0, collect($list)->firstWhere('id', $id)['unread']);
-    $this->assertDatabaseCount('message_reads', 4); // 2 by Alice (own) + 2 by Bob (on read)
+    $this->assertDatabaseCount('message_reads', 4);
 });
 
 it('lists only own threads and sorts them by the latest message', function () {

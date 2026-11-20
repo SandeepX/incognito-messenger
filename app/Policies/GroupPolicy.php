@@ -19,7 +19,6 @@ class GroupPolicy
 
     public function leave(User $user, Group $group): bool
     {
-        // The creator must delete the group instead of orphaning it.
         return $group->creator_id !== $user->id && $group->isMember($user->id);
     }
 }

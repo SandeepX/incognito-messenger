@@ -13,9 +13,6 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Behind the Caddy HTTPS proxy Laravel must honour X-Forwarded-*
-        // so redirects and generated URLs use the real LAN HTTPS origin.
-        // All values come from .env — nothing about the host is hardcoded.
         $proxies = array_values(array_filter(array_map(
             'trim',
             explode(',', (string) env('TRUSTED_PROXIES', '')),
@@ -27,8 +24,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PORT);
         }
 
-        // Optional host allow-list. An empty value keeps Laravel's default
-        // (all hosts accepted), which suits a LAN address that can change.
         $hosts = array_values(array_filter(array_map(
             'trim',
             explode(',', (string) env('TRUSTED_HOSTS', '')),

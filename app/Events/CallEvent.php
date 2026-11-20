@@ -10,11 +10,6 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * One call signaling envelope. The concrete wire event is selected by
- * $eventName (call:invite, call:offer, call:end, ...). SDP and ICE are only
- * ever delivered to the two participants' private user channels.
- */
 class CallEvent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;

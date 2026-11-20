@@ -27,7 +27,7 @@ export function registerCallComponents(Alpine) {
         init() {
             try {
                 this.speakerId = localStorage.getItem(`incognito-speaker-device-${document.querySelector('meta[name="user-id"]')?.content || 0}`) || '';
-            } catch { /* ignore */ }
+            } catch {}
 
             this.refreshOutputs();
 
@@ -155,8 +155,6 @@ export function registerCallComponents(Alpine) {
         },
     }));
 
-    // Development-only panel. Enabled by the `app-debug` meta tag so it is
-    // never shown in a production build. All values are plain strings/bools.
     Alpine.data('callDiagnostics', () => ({
         enabled: false,
         open: false,
@@ -197,8 +195,6 @@ export function registerCallComponents(Alpine) {
             this._onPeer = (event) => this.applyPeer(event.detail);
             window.addEventListener('chat-peer-changed', this._onPeer);
 
-            // The messenger may have opened a conversation before Alpine
-            // started, so hydrate from the last value it published.
             if (window.__incognitoChatPeer !== undefined) {
                 this.applyPeer(window.__incognitoChatPeer);
             }

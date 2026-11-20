@@ -256,8 +256,6 @@ it('ending an active call records duration, history, and pushes to both sides', 
     $this->assertSame([], $payload['seen_by']);
     $this->assertSame('', $payload['body']);
 
-    // Call history is a system row: it never creates read receipts or
-    // unread badges, and it cannot be unsent.
     $this->actingAs($bob)->postJson("/api/messages/{$message->id}/seen")->assertStatus(422);
     $this->actingAs($alice)->postJson("/api/messages/{$message->id}/unsend", ['mode' => 'everyone'])->assertStatus(422);
 
@@ -335,7 +333,6 @@ it('closing one ringing tab keeps the other tabs ringing', function () {
     $this->assertSame('ringing', $call->status);
     $this->assertSame(['tab-b'], $call->ringing_tabs);
 
-    // Closing the last ringing tab ends the call as missed.
     $this->actingAs($bob)
         ->postJson("/api/calls/{$call->id}/leave", ['tab_id' => 'tab-b'])
         ->assertOk();
@@ -410,7 +407,6 @@ it('only participants can authorize call and user channels', function () {
     $eve = $this->userWithProfile('eve');
     $call = callLegacyRinging($alice, $bob);
 
-    // Call signaling uses private-users.{id}, one channel per participant.
     Event::assertDispatched(CallEvent::class, function (CallEvent $event) use ($bob) {
         $channels = array_map(fn ($channel) => $channel->name, $event->broadcastOn());
 
@@ -418,10 +414,6 @@ it('only participants can authorize call and user channels', function () {
             && $channels === ["private-users.{$bob->id}"];
     });
 
-    // The server authorizes every /broadcasting/auth request against the
-    // route callbacks: users.* is self-only, call.* is participant-only.
-    // Tests use the null broadcaster, so inspect the registered callbacks
-    // directly instead of hitting /broadcasting/auth over HTTP.
     $channels = Broadcast::driver()->getChannels();
     $userRule = $channels['users.{id}'];
     $callRule = $channels['call.{callId}'];
@@ -441,7 +433,6 @@ it('busy endpoint performs server-side transition and writes history', function 
     $bob = $this->userWithProfile('bob');
     $call = callLegacyRinging($alice, $bob);
 
-    // Only a participant may call the endpoint; a stranger is rejected.
     $eve = $this->userWithProfile('eve');
     $this->actingAs($eve)
         ->postJson("/api/calls/{$call->id}/busy")

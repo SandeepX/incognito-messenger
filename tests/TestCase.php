@@ -10,7 +10,6 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
-        // Tests must not depend on `npm run build` output being present.
         $this->withoutVite();
     }
 }

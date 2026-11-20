@@ -8,10 +8,6 @@ use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    /**
-     * Demo accounts for local development. All passwords are "password".
-     * Real users register themselves through /register.
-     */
     public function run(): void
     {
         $accounts = [
@@ -24,7 +20,7 @@ class DatabaseSeeder extends Seeder
         foreach ($accounts as $name => [$username, $bio]) {
             $user = User::firstOrCreate(
                 ['email' => strtolower($name).'@example.com'],
-                ['name' => $name, 'password' => 'password'], // cast hashes it
+                ['name' => $name, 'password' => 'password'],
             );
 
             UserProfile::firstOrCreate(

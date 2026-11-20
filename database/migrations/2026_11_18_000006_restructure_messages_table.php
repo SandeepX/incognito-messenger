@@ -4,17 +4,11 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * The original demo messages table stored a raw from/to pair. Real chats
- * need messages to belong to a *conversation* so that direct chats and
- * groups share one code path (and one private broadcast channel).
- */
 return new class extends Migration
 {
     public function up(): void
     {
         Schema::dropIfExists('messages');
-        // Left over from an earlier version of the demo.
         Schema::dropIfExists('chat_messages');
 
         Schema::create('messages', function (Blueprint $table) {
@@ -24,7 +18,6 @@ return new class extends Migration
             $table->text('body');
             $table->timestamps();
 
-            // Message history is always read newest-first within one thread.
             $table->index(['conversation_id', 'id']);
         });
     }

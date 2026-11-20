@@ -21,13 +21,11 @@ class MessageAttachment extends Model
         return $this->belongsTo(Message::class);
     }
 
-    /** Safe filename for Content-Disposition headers. */
     public function safeName(): string
     {
         return AttachmentUpload::safeFilename($this->original_filename);
     }
 
-    /** Human-readable size for the UI. */
     public function sizeLabel(): string
     {
         $bytes = (int) $this->file_size;

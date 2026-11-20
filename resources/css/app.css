@@ -7,29 +7,23 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
-/* ============================================================
-   Incognito Messenger — tokens, themes, layout
-   ============================================================ */
 :root {
-    /* spacing scale */
     --sp-4: 4px;
     --sp-8: 8px;
     --sp-12: 12px;
     --sp-16: 16px;
     --sp-24: 24px;
 
-    /* radii */
     --r-8: 8px;
     --r-12: 12px;
     --r-16: 16px;
     --r-20: 20px;
     --r-pill: 999px;
 
-    /* dark (default) */
     --bg: #0b1220;
-    --surface: #111c2e;      /* sidebar */
-    --surface-2: #162338;    /* cards / composer / header */
-    --surface-3: #1d2c44;    /* hover / raised */
+    --surface: #111c2e;
+    --surface-2: #162338;
+    --surface-3: #1d2c44;
     --line: #26374f;
     --text: #e8eef7;
     --muted: #93a4bd;
@@ -87,7 +81,6 @@ a { color: var(--accent); text-decoration: none; }
     outline-offset: 2px;
 }
 
-/* ---------- app shell ---------- */
 .app {
     display: grid;
     grid-template-columns: 360px minmax(0, 1fr);
@@ -98,7 +91,6 @@ a { color: var(--accent); text-decoration: none; }
 }
 main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
 
-/* ---------- sidebar ---------- */
 .sidebar {
     display: flex;
     flex-direction: column;
@@ -177,12 +169,10 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
 .tab-badge { min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; line-height: 1; }
 .side-pane { padding-bottom: var(--sp-12); }
 
-/* ---------- notes row (Instagram-style) ---------- */
 .notes-strip {
     position: relative;
     padding: 0 0 var(--sp-8);
 }
-/* Soft edges only while the row can actually scroll sideways. */
 .notes-strip::before,
 .notes-strip::after {
     content: '';
@@ -204,12 +194,9 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
     display: flex;
     align-items: flex-start;
     gap: var(--sp-12);
-    /* Top padding is the room the bubble needs above the 56px avatar
-       (two lines + overlap). Horizontal padding leaves space for the
-       fade edges. No fixed height: the strip sizes to its content. */
     padding: 40px var(--sp-16) 6px;
     overflow-x: auto;
-    overflow-y: hidden; /* horizontal scroller: clipping happens at this padding box */
+    overflow-y: hidden;
     overscroll-behavior-x: contain;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
@@ -258,7 +245,6 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
     outline-offset: 2px;
 }
 
-/* Bubble is positioned above the avatar and overlaps its top edge by 8px. */
 .note-bubble-wrap {
     position: absolute;
     left: 50%;
@@ -284,7 +270,6 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
     text-align: center;
     overflow-wrap: anywhere;
 }
-/* Tail sits outside the clamped bubble so overflow:hidden cannot clip it. */
 .note-tail {
     position: absolute;
     left: 50%;
@@ -311,7 +296,6 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
 }
 .note-item:hover .note-name { color: var(--text); }
 
-/* Small add badge on my avatar instead of a second 56px dashed circle. */
 .note-plus {
     position: absolute;
     right: -2px;
@@ -342,7 +326,6 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
 }
 #note-counter { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* ---------- avatars ---------- */
 .avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex: none; background: var(--surface-3); display: block; }
 .avatar.sm { width: 30px; height: 30px; }
 .avatar.lg { width: 56px; height: 56px; }
@@ -368,7 +351,6 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
 }
 .sidebar .online-dot { border-color: var(--surface); }
 
-/* ---------- lists / chat rows ---------- */
 .section-head { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-8) var(--sp-16); }
 .section-head h2 { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0; }
 .head-meta { display: inline-flex; align-items: center; gap: var(--sp-8); }
@@ -411,7 +393,6 @@ main { display: flex; min-width: 0; min-height: 0; background: var(--bg); }
 .badge { background: var(--accent); color: #fff; border-radius: var(--r-pill); min-width: 18px; height: 18px; padding: 0 5px; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .badge:empty { display: none; }
 
-/* Messenger-style notification bell badge */
 .notification-btn { position: relative; overflow: visible; }
 .notification-badge {
     position: absolute;
@@ -452,7 +433,6 @@ html[data-theme="light"] .notification-badge { background: #dc2626; border-color
 .compact-list .conv-item { padding: 8px; }
 .action-row { display: inline-flex; gap: 6px; flex: none; }
 
-/* ---------- buttons / menus ---------- */
 .icon-btn {
     width: 32px; height: 32px; padding: 0; border-radius: var(--r-8);
     border: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
@@ -501,7 +481,6 @@ html[data-theme="light"] .notification-badge { background: #dc2626; border-color
 .row-icon-btn.danger:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .row-icon-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-/* ---------- chat area ---------- */
 .chat { display: none; flex-direction: column; position: relative; flex: 1; min-width: 0; min-height: 0; height: 100%; background: var(--bg); }
 .chat.open { display: flex; }
 .chat-head {
@@ -528,7 +507,6 @@ html[data-theme="light"] .notification-badge { background: #dc2626; border-color
 .empty-chat .big { font-size: 44px; margin-bottom: var(--sp-8); }
 .empty-chat strong { display: block; color: var(--text); font-size: 18px; margin-bottom: 4px; }
 
-/* ---------- messages ---------- */
 .messages {
     flex: 1 1 auto;
     min-height: 0;
@@ -633,7 +611,6 @@ html[data-theme="light"] .status-ticks.seen { color: #e0f2fe; }
 .msg-menu-btn:hover { background: var(--surface-3); color: var(--text); }
 @media (hover: none) { .msg-menu-btn { opacity: .6; } }
 
-/* typing indicator bubble */
 .typing-row { display: flex; align-items: flex-end; gap: var(--sp-8); align-self: flex-start; max-width: 65%; }
 .typing-bubble {
     display: inline-flex; align-items: center; gap: 4px;
@@ -645,11 +622,9 @@ html[data-theme="light"] .status-ticks.seen { color: #e0f2fe; }
 .typing-bubble .dot:nth-child(3) { animation-delay: .3s; }
 @keyframes typing-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
 
-/* search highlight */
 mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; border-radius: 2px; padding: 0 1px; }
 .msg-row.search-dim { opacity: 0.35; }
 
-/* ---------- attachments in messages ---------- */
 .msg-attachments { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; max-width: 280px; }
 .msg-image { display: block; width: 100%; max-width: 260px; max-height: 220px; object-fit: cover; border-radius: var(--r-12); cursor: zoom-in; border: 1px solid var(--line); }
 .file-card { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-12); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); color: inherit; }
@@ -659,7 +634,6 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
 .file-card .file-size { font-size: 11px; opacity: .8; }
 .file-card a { font-size: 16px; color: inherit; flex: none; }
 
-/* ---------- composer ---------- */
 .composer {
     position: relative;
     flex: none;
@@ -688,22 +662,16 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
     resize: none;
     min-height: 0;
     max-height: 140px;
-    /* Integer line box (20px) + 8px top/bottom padding = 36px for one line,
-       so the scroll height can never round above the element height. */
     line-height: 20px;
     padding: 8px 8px 8px 4px;
     border: 0;
     background: transparent;
     color: var(--text);
     outline: none;
-    /* Short text must never show a scrollbar. The auto-grow script flips
-       this to "auto" only once the content passes max-height. */
     overflow-y: hidden;
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
-/* Keep the long-text scrollbar invisible (scrolling still works by wheel,
-   trackpad, touch and arrow keys) so it can never sit near the send button. */
 .composer-bar textarea::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .composer-bar textarea::placeholder { color: var(--muted); }
 .send-btn {
@@ -742,7 +710,6 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
 .jump-latest:hover { background: var(--surface-3); }
 .jump-latest[hidden] { display: none; }
 
-/* ---------- modals / overlays ---------- */
 .backdrop { position: fixed; inset: 0; background: var(--overlay); display: none; align-items: center; justify-content: center; padding: var(--sp-16); z-index: 50; }
 .backdrop.show { display: flex; }
 .modal { width: min(520px, 100%); max-height: 88vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-16); padding: var(--sp-24); box-shadow: var(--shadow); }
@@ -791,7 +758,6 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
 .request-details .member-row { border: 1px solid var(--line); border-radius: var(--r-12); }
 .request-messages .bubble { margin: 6px 0; max-width: 100%; }
 
-/* ---------- requests redesign ---------- */
 .requests-pane { padding: 8px 8px 12px; }
 .requests-segmented {
     display: inline-flex;
@@ -958,7 +924,6 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
 .sidebar-scroll.slim-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
 .sidebar-scroll.slim-scroll::-webkit-scrollbar-track { background: transparent; }
 
-/* ---------- delete message dialog ---------- */
 .delete-backdrop { z-index: 70; }
 .delete-dialog {
     width: min(400px, 100%);
@@ -1032,7 +997,6 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
 .offline.show { display: block; }
 .offline.show + .app { padding-top: 28px; }
 
-/* ---------- skeletons ---------- */
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .skeleton {
     background: linear-gradient(90deg, var(--surface-3) 25%, var(--line) 37%, var(--surface-3) 63%);
@@ -1059,7 +1023,6 @@ mark.chat-highlight { background: rgba(250, 204, 21, 0.35); color: inherit; bord
 .msg-skel-bubble.w55 { width: 220px; }
 .msg-skel-bubble.w30 { width: 110px; }
 
-/* ---------- responsive ---------- */
 @media (max-width: 768px) {
     .app { grid-template-columns: minmax(0, 1fr); }
     .sidebar { width: 100%; }

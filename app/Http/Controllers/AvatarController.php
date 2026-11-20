@@ -7,11 +7,6 @@ use Illuminate\Support\Facades\Storage;
 
 class AvatarController extends Controller
 {
-    /**
-     * Avatars live in private MinIO storage; this route is the only door.
-     * The route pattern restricts the filename, and basename() protects
-     * against traversal if this method is reused elsewhere.
-     */
     public function show(string $filename): Response
     {
         $disk = Storage::disk('minio');

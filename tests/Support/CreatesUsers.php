@@ -8,7 +8,6 @@ use App\Models\UserProfile;
 
 trait CreatesUsers
 {
-    /** Create a user that has the profile every messenger screen expects. */
     protected function userWithProfile(string $username, ?string $email = null): User
     {
         $user = User::factory()->create([
@@ -23,7 +22,6 @@ trait CreatesUsers
         return $user;
     }
 
-    /** Make two users accepted friends (direct chat prerequisite). */
     protected function befriend(User $a, User $b): void
     {
         Friendship::firstOrCreate(

@@ -1,18 +1,4 @@
-# Single-origin HTTPS for the messenger on a LAN.
-#
-# Copy .env.example -> .env, set the values below, then run:
-#   export LAN_HOST=192.168.1.10
-#   export TLS_CERT=/home/user/certs/192.168.1.10+3.pem
-#   export TLS_KEY=/home/user/certs/192.168.1.10+3-key.pem
-#   caddy run --config Caddyfile
-#
-# See docs/lan-https-setup.md for the full walkthrough. Never hardcode the
-# host IP in code — it is supplied through the environment.
 {
-	# Automatic HTTPS cannot issue a certificate for a private LAN IP, so
-	# we provide a local mkcert certificate explicitly in the site block.
-	# Don't bind a separate HTTP :80 redirect listener: everything is served
-	# from the single HTTPS origin, and :80 may need root privileges.
 	auto_https disable_redirects
 }
 
@@ -21,15 +7,11 @@ https://{$LAN_HOST}:8443 {
 
 	encode gzip
 
-	# Reverb's WebSocket endpoint (/app) and its HTTP broadcast API (/apps)
-	# are proxied on the SAME origin as the Laravel app. Both paths are
-	# matched exactly; /broadcasting/auth stays on the Laravel side.
 	@reverb path /app /app/* /apps /apps/*
 	handle @reverb {
 		reverse_proxy 127.0.0.1:8080
 	}
 
-	# Pages, assets, /api/*, /broadcasting/auth and everything else.
 	handle {
 		reverse_proxy 127.0.0.1:8000 {
 			header_up X-Forwarded-Proto https

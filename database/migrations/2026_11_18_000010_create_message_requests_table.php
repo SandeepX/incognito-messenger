@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('conversation_id')->unique()->constrained()->cascadeOnDelete();
             $table->string('pair_key', 30)->unique();
             $table->text('body');
-            $table->string('status', 12)->default('pending'); // pending, accepted, deleted
+            $table->string('status', 12)->default('pending');
             $table->timestamp('responded_at')->nullable();
             $table->timestamps();
 

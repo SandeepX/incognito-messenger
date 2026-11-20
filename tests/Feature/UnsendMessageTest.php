@@ -6,7 +6,6 @@ use App\Models\MessageAttachment;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 
-/** Legacy helper: befriend the two users and create their direct conversation over the API. */
 function unsendMessageLegacyConversation($alice, $bob): int
 {
     makeFriends($alice, $bob);
@@ -17,7 +16,6 @@ function unsendMessageLegacyConversation($alice, $bob): int
         ->json('id');
 }
 
-/** Legacy helper: send a plain message in the given conversation. */
 function unsendMessageLegacySend($alice, int $conversationId, string $body): int
 {
     return (int) test()->actingAs($alice)
@@ -57,7 +55,6 @@ it('unsends an unseen message for both sides', function () {
             && $event->broadcastOn()[0]->name === "private-conversation.{$conversationId}";
     });
 
-    // An unsent placeholder never leaves an unread badge behind.
     $bobSidebar = $this->actingAs($bob)->getJson('/api/conversations')->assertOk()->json();
     $this->assertSame(0, $bobSidebar[0]['unread']);
     $this->assertSame($alice->name.' unsent a message', $bobSidebar[0]['last_message']['preview']);
@@ -81,7 +78,6 @@ it('hides a seen message only from the sender', function () {
     $conversationId = unsendMessageLegacyConversation($alice, $bob);
     $messageId = unsendMessageLegacySend($alice, $conversationId, 'Already seen');
 
-    // Opening the chat creates Bob's per-message read receipt.
     $this->actingAs($bob)->getJson("/api/conversations/{$conversationId}")->assertOk();
     $this->assertDatabaseHas('message_reads', [
         'message_id' => $messageId,
@@ -102,7 +98,6 @@ it('hides a seen message only from the sender', function () {
     ]);
     $this->assertContains($alice->id, Message::findOrFail($messageId)->deleted_for);
 
-    // Local deletes never announce an event to the other participant.
     Event::assertNotDispatched(MessageUnsent::class);
 
     $aliceHistory = $this->actingAs($alice)->getJson("/api/conversations/{$conversationId}")->assertOk()->json();
@@ -111,7 +106,6 @@ it('hides a seen message only from the sender', function () {
     $aliceSidebar = $this->actingAs($alice)->getJson('/api/conversations')->assertOk()->json();
     $this->assertNull($aliceSidebar[0]['last_message']);
 
-    // The recipient keeps the original message untouched.
     $bobHistory = $this->actingAs($bob)->getJson("/api/conversations/{$conversationId}")->assertOk()->json();
     $this->assertCount(1, $bobHistory['data']);
     $this->assertSame('Already seen', $bobHistory['data'][0]['body']);

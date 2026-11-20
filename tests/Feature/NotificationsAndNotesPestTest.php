@@ -32,7 +32,6 @@ describe('notifications', function () {
 
         actingAsUser($alice)->getJson('/api/notifications')->assertJsonPath('unread_count', 2);
 
-        // Marking the same one again does not lower the count further.
         actingAsUser($alice)->postJson("/api/notifications/{$notifications[0]->id}/read")
             ->assertOk()
             ->assertJsonPath('unread_count', 2);

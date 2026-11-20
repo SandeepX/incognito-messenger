@@ -56,7 +56,6 @@ class Message extends Model
         return $this->belongsTo(Call::class);
     }
 
-    /** Messages hidden from this user's history (me-only unsend). */
     public function scopeVisibleTo(Builder $query, int $userId): Builder
     {
         return $query->where(function (Builder $q) use ($userId) {
@@ -70,13 +69,6 @@ class Message extends Model
         return in_array($userId, array_map('intval', $this->deleted_for ?? []), true);
     }
 
-    /**
-     * ONE shape for HTTP history and the live broadcast event. If these
-     * ever drift, messages silently disappear in the browser.
-     *
-     * The viewer id is only used to choose the "You unsent a message" wording;
-     * the socket payloads pass null and the browser decides from unsent_by.
-     */
     public function payload(?int $viewerId = null, ?User $viewer = null): array
     {
         $reads = $this->relationLoaded('reads')

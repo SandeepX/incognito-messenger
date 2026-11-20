@@ -9,16 +9,10 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Broadcast only for "delete for everyone" (unseen messages). Local
- * "delete for me" writes never reach other participants: the row is simply
- * omitted from their own history via message.deleted_for.
- */
 class MessageUnsent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    /** @param array<int, int> $hiddenFor */
     public function __construct(
         public Message $message,
         public string $mode,
@@ -48,8 +42,6 @@ class MessageUnsent implements ShouldBroadcastNow
             'hidden_for' => array_values(array_map('intval', $this->hiddenFor)),
         ];
 
-        // Seen messages stay intact for everyone except the sender, so there
-        // is no reason to put their body on the wire again.
         if ($this->mode === 'everyone') {
             $base['message'] = $this->message->payload();
         }

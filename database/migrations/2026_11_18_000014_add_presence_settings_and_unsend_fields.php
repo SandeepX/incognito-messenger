@@ -6,11 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Presence timestamps, privacy/sound preferences and message unsend
-     * metadata. Seen receipts already live in message_reads; this migration
-     * deliberately does not duplicate them.
-     */
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {

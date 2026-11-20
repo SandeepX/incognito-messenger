@@ -1,12 +1,5 @@
 <?php
 
-/*
- * The app is served from a single origin (the same host:port serves both
- * Laravel and, through Caddy, Reverb). CORS rarely comes into play, but the
- * values are env-driven so the LAN HTTPS origin works when credentials or
- * a separate front-end origin are used.
- */
-
 $origins = array_values(array_filter(array_map(
     'trim',
     explode(',', env('CORS_ALLOWED_ORIGINS', env('APP_URL', '*'))),

@@ -67,7 +67,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(Friendship::class);
     }
 
-    /** Accepted friends only — both directions are stored as rows. */
     public function friends(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'friendships', 'user_id', 'friend_id')
@@ -94,7 +93,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(Note::class);
     }
 
-    /** Active (unexpired) note, eager-loadable for list payloads. */
     public function activeNote(): HasOne
     {
         return $this->hasOne(Note::class)->active();
@@ -152,7 +150,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasBlocked($userId) || $this->isBlockedBy($userId);
     }
 
-    /** @return array<int, int> */
     public function blockedUserIds(): array
     {
         return $this->blocks()->pluck('blocked_id')->map(fn ($id) => (int) $id)->all();
@@ -163,11 +160,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->friends()->whereKey($userId)->exists();
     }
 
-    /**
-     * Friend-safe note payload for list rows. Notes are private to the author
-     * and accepted friends, so a non-friend never sees even the cloud marker.
-     * Also respects the author's notes visibility, blocking, and note expiry.
-     */
     public function notePayload(int $viewerId): array
     {
         $note = $this->relationLoaded('activeNote')
@@ -209,7 +201,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->isFriendsWith($viewerId);
     }
 
-    /** @return array<int, int> */
     public function friendIds(): array
     {
         return $this->friends()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
@@ -226,7 +217,6 @@ class User extends Authenticatable implements MustVerifyEmail
             ->exists();
     }
 
-    /** Privacy flag: false means nobody else should see presence or last-active text. */
     public function showActiveStatus(): bool
     {
         return (bool) ($this->profile?->show_active_status ?? true);
@@ -275,7 +265,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return in_array($visibility, ['friends', 'nobody'], true) ? $visibility : 'friends';
     }
 
-    /** Who may ring this user: accepted friends only, or nobody. */
     public function callPolicy(): string
     {
         $policy = $this->profile?->allow_calls ?? 'friends';
@@ -318,7 +307,6 @@ class User extends Authenticatable implements MustVerifyEmail
         };
     }
 
-    /** Shared shape for presence-aware payloads; hides timestamps when private. */
     public function presencePayload(): array
     {
         return $this->presencePayloadFor(null);
@@ -344,7 +332,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->profile?->username ?? Str::slug($this->name);
     }
 
-    /** Avatar URL served through Laravel (storage stays private). Null when no custom photo. */
     public function avatarUrl(): ?string
     {
         return $this->profile?->avatar_path

@@ -7,7 +7,6 @@ use App\Models\User;
 
 class ConversationPolicy
 {
-    /** Only participants may read a thread or send messages to it. */
     public function view(User $user, Conversation $conversation): bool
     {
         if ($conversation->type === 'direct') {

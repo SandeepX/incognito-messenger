@@ -13,7 +13,6 @@ return new class extends Migration
             $table->string('name');
             $table->string('avatar_path')->nullable();
             $table->text('description')->nullable();
-            // The creator is always an admin of the group.
             $table->foreignId('creator_id')->constrained('users')->cascadeOnDelete();
             $table->timestamps();
         });

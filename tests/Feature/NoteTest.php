@@ -16,13 +16,11 @@ it('shows notes only to their author and accepted friends', function () {
     $this->assertSame($alice->id, $note['user']['id']);
     $this->assertSame('Coffee at 3pm?', $note['content']);
 
-    // A stranger cannot see it at all.
     $eveNotes = $this->actingAs($eve)->getJson('/api/notes')->json();
-    $this->assertCount(0, $eveNotes['data']); // Eve has no notes either
+    $this->assertCount(0, $eveNotes['data']);
     $this->assertFalse(collect($eveNotes['data'])->contains('id', $note['id']));
     $this->actingAs($eve)->getJson("/api/notes/{$note['id']}")->assertForbidden();
 
-    // A pending message request must not leak even the cloud marker.
     $this->actingAs($alice)->postJson('/api/message-requests', [
         'user_id' => $eve->id,
         'body' => 'Hi Eve',
@@ -37,13 +35,11 @@ it('shows notes only to their author and accepted friends', function () {
     $this->assertFalse($eveRow['has_note']);
     $this->assertNull($eveRow['note']);
 
-    // Accepting a friend request unlocks it.
     $this->befriend($alice, $bob);
     $bobNotes = $this->actingAs($bob)->getJson('/api/notes')->json();
     $this->assertTrue(collect($bobNotes['data'])->contains('id', $note['id']));
     $this->actingAs($bob)->getJson("/api/notes/{$note['id']}")->assertOk();
 
-    // Friends see the actual text in every place that renders the avatar.
     $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
     $friendRow = collect($friends['friends'])->firstWhere('id', $alice->id);
     $this->assertTrue($friendRow['has_note']);
@@ -72,7 +68,6 @@ it('allows only the owner to edit or delete a note', function () {
     $this->actingAs($bob)->putJson("/api/notes/{$note['id']}", ['content' => 'Hacked'])->assertForbidden();
     $this->actingAs($bob)->deleteJson("/api/notes/{$note['id']}")->assertForbidden();
 
-    // Saving again replaces the old note instead of stacking duplicates.
     $second = $this->actingAs($alice)->postJson('/api/notes', ['content' => 'Updated'])->assertCreated()->json();
     $this->assertNotSame($note['id'], $second['id']);
     $this->assertDatabaseCount('notes', 1);
@@ -101,7 +96,6 @@ it('hides expired notes even for the owner', function () {
         ->assertJsonMissing(['id' => $note->id]);
     $this->actingAs($alice)->getJson("/api/notes/{$note->id}")->assertForbidden();
 
-    // An expired note must not leave a cloud marker on the avatar either.
     $friends = $this->actingAs($bob)->getJson('/api/friends')->json();
     $this->assertFalse(collect($friends['friends'])->firstWhere('id', $alice->id)['has_note']);
 });

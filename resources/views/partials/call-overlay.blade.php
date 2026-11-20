@@ -3,7 +3,6 @@
     x-cloak
     x-show="$store.call.status !== 'idle'"
 >
-    <!-- Incoming / outgoing / ended dialog -->
     <div
         class="call-overlay"
         x-show="fullScreen()"
@@ -35,7 +34,6 @@
 
             <div class="call-timer" x-show="$store.call.status === 'active'" x-text="elapsedLabel()"></div>
 
-            <!-- Incoming -->
             <div class="call-actions" x-show="$store.call.status === 'incoming'">
                 <div class="call-btn-group">
                     <button class="call-btn decline" type="button" @click="decline()" aria-label="Decline audio call" title="Decline">
@@ -58,7 +56,6 @@
                 </div>
             </div>
 
-            <!-- Outgoing / connecting -->
             <div class="call-actions" x-show="['calling', 'ringing', 'connecting'].includes($store.call.status)">
                 <div class="call-btn-group">
                     <button
@@ -74,7 +71,6 @@
                 </div>
             </div>
 
-            <!-- Ended / failed -->
             <div class="call-retry" x-show="$store.call.status === 'ended'">
                 <button class="call-link-btn" type="button" @click="retryCall()" x-show="$store.call.peer?.id">Try again</button>
                 <button class="call-link-btn" type="button" @click="close()">Close</button>
@@ -82,7 +78,6 @@
         </div>
     </div>
 
-    <!-- Floating bar while the call stays active -->
     <div
         class="call-mini"
         x-show="['active', 'reconnecting'].includes($store.call.status)"
@@ -161,7 +156,6 @@
     </div>
 </div>
 
-{{-- Development-only connection diagnostics (enabled by APP_DEBUG). --}}
 <div
     x-data="callDiagnostics"
     x-cloak

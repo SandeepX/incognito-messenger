@@ -23,13 +23,10 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
     }
 
     public function boot(): void
     {
-        // Explicit registration keeps the authorization rules obvious,
-        // even if model/policy names change later.
         Gate::policy(Conversation::class, ConversationPolicy::class);
         Gate::policy(Group::class, GroupPolicy::class);
         Gate::policy(FriendRequest::class, FriendRequestPolicy::class);

@@ -55,7 +55,6 @@ it('does not expose hidden active status in REST or the presence channel', funct
     $alice->profile->update(['show_active_status' => false]);
     $this->actingAs($alice)->postJson('/api/presence/heartbeat')->assertOk();
 
-    // The timestamp is still stored; only other people cannot read it.
     $this->assertNotNull($alice->fresh()->last_active_at);
 
     $presence = collect($this->actingAs($bob)->getJson('/api/presence')->assertOk()->json())

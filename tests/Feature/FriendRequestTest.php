@@ -10,7 +10,6 @@ it('lets a user send, accept, and list friend requests', function () {
     $this->actingAs($alice)->postJson('/api/friends', ['user_id' => $bob->id])
         ->assertCreated()->assertJsonPath('status', 'pending');
 
-    // Only one pending row exists per pair; a duplicate from the same sender is refused.
     $this->actingAs($alice)->postJson('/api/friends', ['user_id' => $bob->id])->assertStatus(422);
     $this->assertDatabaseCount('friend_requests', 1);
 
@@ -42,18 +41,15 @@ it('allows requests to be rejected, cancelled, and friends removed', function ()
     $this->actingAs($alice)->postJson('/api/friends', ['user_id' => $bob->id])->assertCreated();
     $id = FriendRequest::first()->id;
 
-    // Only the sender may cancel.
     $this->actingAs($bob)->deleteJson("/api/friends/{$id}")->assertForbidden();
     $this->actingAs($alice)->deleteJson("/api/friends/{$id}")
         ->assertOk()->assertJsonPath('status', 'cancelled');
 
-    // A cancelled request may be sent again.
     $this->actingAs($alice)->postJson('/api/friends', ['user_id' => $bob->id])->assertCreated();
     $request = FriendRequest::first();
     $this->actingAs($bob)->postJson("/api/friends/{$request->id}/reject")
         ->assertOk()->assertJsonPath('status', 'rejected');
 
-    // Re-friend directly for the removal check.
     $this->befriend($alice, $bob);
     $this->actingAs($alice)->deleteJson("/api/friends/user/{$bob->id}")->assertOk();
     $this->assertFalse($alice->fresh()->isFriendsWith($bob->id));
@@ -81,7 +77,6 @@ it('keeps request notes optional and visible to both sides', function () {
     $outgoing = $this->actingAs($alice)->getJson('/api/friends')->json();
     $this->assertSame('Hey Bob, it is Alice!', $outgoing['outgoing'][0]['note']);
 
-    // A blank note is allowed and stored as null.
     $requestId = FriendRequest::first()->id;
     $this->actingAs($alice)->deleteJson("/api/friends/{$requestId}")->assertOk();
     $this->actingAs($alice)->postJson('/api/friends', [
@@ -93,7 +88,6 @@ it('keeps request notes optional and visible to both sides', function () {
         'note' => null,
     ]);
 
-    // Notes still have a hard server-side ceiling.
     $requestId = FriendRequest::first()->id;
     $this->actingAs($alice)->deleteJson("/api/friends/{$requestId}")->assertOk();
     $this->actingAs($alice)->postJson('/api/friends', [

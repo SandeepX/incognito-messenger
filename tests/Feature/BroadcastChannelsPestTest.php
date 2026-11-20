@@ -19,7 +19,6 @@ describe('private user channels', function () {
     it('returns the presence payload on the online channel', function () {
         $alice = makeUser('alice');
 
-        // The callback returns an array, so inspect it directly.
         $channels = Broadcast::driver()->getChannels();
         $member = $channels['online']($alice);
 
@@ -62,7 +61,6 @@ describe('conversation channels', function () {
             ->and(channelAllows('conversation.{id}', $member, (string) $conversation->id))->toBeTrue()
             ->and(channelAllows('conversation.{id}', $outsider, (string) $conversation->id))->toBeFalse();
 
-        // Removing a member revokes authorization immediately.
         $group->members()->detach($member->id);
         expect(channelAllows('conversation.{id}', $member, (string) $conversation->id))->toBeFalse();
     });

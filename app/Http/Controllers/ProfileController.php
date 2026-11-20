@@ -35,7 +35,6 @@ class ProfileController extends Controller
             'show_active_status',
         ));
 
-        // Both checkboxes post a hidden 0, so an unchecked box is explicit.
         $profile->message_sounds = $request->boolean('message_sounds', true);
         $profile->show_active_status = $request->boolean('show_active_status', true);
         $profile->save();
@@ -43,11 +42,6 @@ class ProfileController extends Controller
         return back()->with('status', 'Profile updated.');
     }
 
-    /**
-     * Avatar uploads are validated by MIME type AND extension, and are
-     * stored with a generated filename under private storage. Only the
-     * dedicated /avatars/{filename} route exposes them publicly.
-     */
     public function updateAvatar(Request $request): RedirectResponse
     {
         $validated = $request->validate(
@@ -64,8 +58,6 @@ class ProfileController extends Controller
         $path = $request->file('avatar')->store('avatars', 'minio');
 
         try {
-            // Persist the new path first: a failed DB write must never leave
-            // the profile pointing at a file we have already deleted.
             $profile->update(['avatar_path' => $path]);
         } catch (\Throwable $e) {
             Storage::disk('minio')->delete($path);

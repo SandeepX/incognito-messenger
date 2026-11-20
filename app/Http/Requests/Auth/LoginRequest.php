@@ -39,7 +39,6 @@ class LoginRequest extends FormRequest
             );
         }
 
-        // Prevent session fixation: the session ID changes on every login.
         $this->session()->regenerate();
     }
 

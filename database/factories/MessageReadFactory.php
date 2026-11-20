@@ -7,9 +7,6 @@ use App\Models\MessageRead;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends Factory<MessageRead>
- */
 class MessageReadFactory extends Factory
 {
     protected $model = MessageRead::class;

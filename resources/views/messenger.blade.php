@@ -265,7 +265,6 @@
     </main>
 </div>
 
-<!-- Find friends modal -->
 <div id="find-friends-modal" class="backdrop">
     <div class="modal">
         <div class="row-between"><h2>Find friends</h2>
@@ -279,7 +278,6 @@
     </div>
 </div>
 
-<!-- New group -->
 <div id="group-modal" class="backdrop">
     <div class="modal">
         <h2>Create a group</h2>
@@ -302,7 +300,6 @@
     </div>
 </div>
 
-<!-- Group settings -->
 <div id="settings-modal" class="backdrop">
     <div class="modal">
         <div class="row-between"><h2 id="settings-title">Group settings</h2>
@@ -321,7 +318,6 @@
     </div>
 </div>
 
-<!-- Note editor / viewer -->
 <div id="note-modal" class="backdrop">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="note-modal-title">
         <div class="row-between"><h2 id="note-modal-title">Your note</h2>
@@ -342,7 +338,6 @@
     </div>
 </div>
 
-<!-- Message request composer (start a request from Find friends) -->
 <div id="request-modal" class="backdrop">
     <div class="modal">
         <div class="row-between"><h2>Send a message request</h2>
@@ -356,7 +351,6 @@
     </div>
 </div>
 
-<!-- Chat info / profile -->
 <div id="chat-info-modal" class="backdrop">
     <div class="modal">
         <div class="row-between"><h2 id="chat-info-title">Info</h2>
@@ -366,7 +360,6 @@
     </div>
 </div>
 
-<!-- Notifications -->
 <div id="notifications-modal" class="backdrop">
     <div class="modal">
         <div class="row-between"><h2>Notifications</h2>
@@ -379,7 +372,6 @@
     </div>
 </div>
 
-<!-- Delete message confirmation -->
 <div id="delete-message-modal" class="backdrop delete-backdrop" aria-hidden="true">
     <div class="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-desc">
         <h2 id="delete-dialog-title">Delete message?</h2>
@@ -400,7 +392,6 @@
     </div>
 </div>
 
-<!-- Image lightbox -->
 <div id="lightbox" class="backdrop lightbox">
     <button class="lightbox-close" type="button" data-close="lightbox" aria-label="Close">✕</button>
     <img id="lightbox-image" src="" alt="Image preview">

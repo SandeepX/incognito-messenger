@@ -6,9 +6,6 @@ use App\Models\Conversation;
 use App\Models\Group;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends Factory<Conversation>
- */
 class ConversationFactory extends Factory
 {
     protected $model = Conversation::class;

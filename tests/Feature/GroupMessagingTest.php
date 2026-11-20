@@ -32,7 +32,6 @@ it('creates a group with matching members, conversation and channel authorizatio
     $this->actingAs($admin)->getJson("/api/groups/{$groupId}")
         ->assertJsonPath('is_admin', true);
 
-    // Outsiders are denied by the API and by broadcasting authorization.
     $this->actingAs($outsider)->getJson("/api/groups/{$groupId}")->assertForbidden();
     $this->actingAs($outsider)->getJson("/api/conversations/{$conversationId}")->assertForbidden();
     $this->assertFalse($this->channelAllows('conversation.{id}', $outsider, $conversationId));
@@ -75,12 +74,10 @@ it('immediately revokes all future access for a removed member', function () {
         'body' => 'before removal',
     ])->assertCreated();
 
-    // A non-admin cannot remove anyone.
     $this->actingAs($member)
         ->deleteJson("/api/groups/{$groupId}/members/{$admin->id}")
         ->assertForbidden();
 
-    // The creator cannot be removed, even by another admin.
     $this->actingAs($admin)
         ->deleteJson("/api/groups/{$groupId}/members/{$admin->id}")
         ->assertStatus(422);
@@ -96,7 +93,6 @@ it('immediately revokes all future access for a removed member', function () {
         'conversation_id' => $conversationId, 'user_id' => $member->id,
     ]);
 
-    // Every access path is closed from this point on.
     $this->actingAs($member)->getJson("/api/groups/{$groupId}")->assertForbidden();
     $this->actingAs($member)->getJson("/api/conversations/{$conversationId}")->assertForbidden();
     $this->actingAs($member)->postJson("/api/conversations/{$conversationId}/messages", [
@@ -104,10 +100,8 @@ it('immediately revokes all future access for a removed member', function () {
     ])->assertForbidden();
     $this->assertFalse($this->channelAllows('conversation.{id}', $member, $conversationId));
 
-    // Past messages are not visible through the conversation list either.
     $this->actingAs($member)->getJson('/api/conversations')->assertOk()->assertJsonCount(0);
 
-    // Remaining members can still chat.
     $this->actingAs($admin)->postJson("/api/conversations/{$conversationId}/messages", [
         'body' => 'still here',
     ])->assertCreated();

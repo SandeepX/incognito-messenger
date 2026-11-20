@@ -12,7 +12,6 @@ use Illuminate\Support\Facades\DB;
 
 class CallController extends Controller
 {
-    /** Authenticated browser configuration (STUN/TURN + ringtone prefs). */
     public function config(Request $request): JsonResponse
     {
         $user = $request->user()->loadMissing('profile');
@@ -43,29 +42,22 @@ class CallController extends Controller
         $conversation = $this->resolveConversation($me, $target, $data['conversation_id'] ?? null);
         abort_unless($me->isFriendsWith((int) $target->id), 403, 'You can only call accepted friends.');
 
-        // Serialize invitations per user pair so two simultaneous calls cannot
-        // both pass the "is this person free?" check and start ringing.
         $outcome = DB::transaction(function () use ($me, $target, &$conversation, $data) {
             User::whereKey($me->id)->lockForUpdate()->first();
             $lockedTarget = User::whereKey($target->id)->lockForUpdate()->firstOrFail();
 
-            // The caller is already busy: this request must not ring anybody.
             if (CallService::activeCallFor((int) $me->id)) {
                 return ['outcome' => 'caller_busy'];
             }
 
-            // A ringing/active callee is busy. The caller sees the call:busy event.
             if (CallService::activeCallFor((int) $lockedTarget->id)) {
                 return ['outcome' => 'busy'];
             }
 
-            // Presence is based on the existing 30s heartbeat. Offline callees
-            // still get a missed-call notification and a chat history entry.
             if (! $lockedTarget->last_active_at || $lockedTarget->last_active_at->lt(now()->subSeconds(90))) {
                 return ['outcome' => 'unavailable'];
             }
 
-            // Only a call that actually rings needs a history thread.
             $conversation = $conversation ?: CallService::directConversation($me, $target);
 
             return [
@@ -102,7 +94,6 @@ class CallController extends Controller
         }
 
         if ($outcome['outcome'] === 'unavailable') {
-            // Offline callers still get a missed-call row in the chat.
             $conversation = $conversation ?: CallService::directConversation($me, $target);
             $call = $this->terminalCall($me, $target, $conversation, 'missed', 'unavailable');
             CallService::recordMessage($call);
@@ -127,7 +118,6 @@ class CallController extends Controller
         return response()->json(['call' => CallService::payload($call)], 201);
     }
 
-    /** Callee tabs acknowledge the ring so the caller can show "Ringing...". */
     public function ringing(Request $request, Call $call): JsonResponse
     {
         $this->assertParticipant($call, (int) $request->user()->id);
@@ -149,8 +139,6 @@ class CallController extends Controller
             return response()->json(['ok' => false, 'status' => $call->status], 410);
         }
 
-        // The first tab to acknowledge moves the caller to "Ringing...".
-        // Every tab is tracked so closing one does not stop the others.
         $first = CallService::registerRingingTab($call, (string) ($data['tab_id'] ?? 'default'));
 
         if ($first) {
@@ -160,7 +148,6 @@ class CallController extends Controller
         return response()->json(['ok' => true, 'status' => $call->status]);
     }
 
-    /** A ringing callee tab is going away; keep ringing while others remain. */
     public function leave(Request $request, Call $call): JsonResponse
     {
         $me = (int) $request->user()->id;
@@ -208,8 +195,6 @@ class CallController extends Controller
             return response()->json(['message' => 'This call has ended.', 'call' => CallService::payload($call)], 410);
         }
 
-        // Accept only a call that is still ringing at write time. A caller
-        // cancel or the 30s sweeper may have ended it between the checks.
         $accepted = Call::query()
             ->whereKey($call->id)
             ->where('status', 'ringing')
@@ -254,11 +239,6 @@ class CallController extends Controller
         return response()->json(['call' => CallService::payload($call)]);
     }
 
-    /**
-     * A participant reports that the callee is busy. The server still owns
-     * the transition: it only ends a ringing call and never trusts a client
-     * claim about somebody else's state.
-     */
     public function busy(Request $request, Call $call): JsonResponse
     {
         $me = (int) $request->user()->id;
@@ -269,8 +249,6 @@ class CallController extends Controller
             return response()->json(['call' => CallService::payload($call)]);
         }
 
-        // The participant check and the ringing-state check above are the
-        // server-side validation. No client whisper can change call state.
         $call = CallService::finish($call, 'busy', 'busy', $me);
         CallService::broadcast($call, 'call:busy', ['reason' => 'busy']);
 
@@ -294,7 +272,6 @@ class CallController extends Controller
         return response()->json(['call' => CallService::payload($call)]);
     }
 
-    /** Either participant may report that the 30s ring timer elapsed. */
     public function timeout(Request $request, Call $call): JsonResponse
     {
         $me = (int) $request->user()->id;
@@ -346,7 +323,6 @@ class CallController extends Controller
         return response()->json(['call' => CallService::payload($call)]);
     }
 
-    /** Relay SDP / ICE only between the two participants of an active call. */
     public function signal(Request $request, Call $call): JsonResponse
     {
         $me = (int) $request->user()->id;
@@ -362,8 +338,6 @@ class CallController extends Controller
 
         $payload = $data['payload'];
         if (in_array($data['type'], ['offer', 'answer'], true)) {
-            // SDP is carried as base64 so CRLF line endings survive the
-            // broadcast layer untouched.
             abort_unless(
                 isset($payload['type'], $payload['sdp'])
                     && $payload['type'] === $data['type']
@@ -422,7 +396,6 @@ class CallController extends Controller
             return $conversation;
         }
 
-        // A new thread is only created when the call actually needs history.
         return null;
     }
 

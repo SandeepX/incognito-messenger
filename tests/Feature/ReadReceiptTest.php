@@ -29,7 +29,6 @@ it('marks a message as seen only when the recipient opens history and is idempot
     $history = $this->actingAs($bob)->getJson("/api/conversations/{$conversationId}")->assertOk()->json();
     $received = collect($history['data'])->firstWhere('id', $messageId);
 
-    // The response itself clears the badge even if a websocket event is missed.
     $this->assertSame(0, $history['unread']);
     $this->assertSame(0, $history['counts'][$conversationId] ?? 0);
     $this->assertSame('seen', $received['status']);
@@ -47,9 +46,8 @@ it('marks a message as seen only when the recipient opens history and is idempot
             && $event->broadcastOn()->name === "private-conversation.{$conversationId}",
     );
 
-    // Re-reading the thread must not produce duplicate receipts or events.
     $this->actingAs($bob)->getJson("/api/conversations/{$conversationId}")->assertOk();
-    $this->assertDatabaseCount('message_reads', 2); // sender + recipient
+    $this->assertDatabaseCount('message_reads', 2);
     Event::assertDispatchedTimes(MessageSeen::class, 1);
 });
 
@@ -84,7 +82,6 @@ it('reports every reader in group receipts and excludes outsiders', function () 
         array_column($afterCharlie['seen_by'], 'user_id'),
     );
 
-    // A removed member can no longer read or generate receipts.
     $this->actingAs($alice)->deleteJson("/api/groups/{$group['id']}/members/{$bob->id}")->assertOk();
     $this->actingAs($bob)->getJson("/api/conversations/{$conversationId}")->assertForbidden();
 });

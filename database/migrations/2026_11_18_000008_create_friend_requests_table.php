@@ -12,9 +12,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('sender_id')->constrained('users')->cascadeOnDelete();
             $table->foreignId('recipient_id')->constrained('users')->cascadeOnDelete();
-            // Sorted "smaller-larger" pair, so A→B and B→A share one key.
             $table->string('pair_key', 30)->unique();
-            $table->string('status', 12)->default('pending'); // pending, accepted, rejected, cancelled
+            $table->string('status', 12)->default('pending');
             $table->timestamp('responded_at')->nullable();
             $table->timestamps();
 

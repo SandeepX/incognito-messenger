@@ -38,12 +38,10 @@ it('stores images and documents in minio and authorizes downloads', function () 
         Storage::disk('minio')->assertExists($attachment->storage_path);
     }
 
-    // A participant can download; an outsider cannot.
     $first = $attachments->first();
     $this->actingAs($bob)->followingRedirects()->get($first->payload()['download_url'])->assertOk();
     $this->actingAs($eve)->get($first->payload()['download_url'])->assertForbidden();
 
-    // Previews stream from the app origin; the browser never talks to MinIO.
     $preview = $this->actingAs($bob)->get($first->payload()['preview_url']);
     $preview->assertOk();
     $this->assertSame('image/png', $preview->headers->get('Content-Type'));
@@ -98,7 +96,6 @@ it('revokes attachment access for a removed group member', function () {
 
     $this->actingAs($alice)->deleteJson("/api/groups/{$group['id']}/members/{$bob->id}")->assertOk();
 
-    // The object still exists, but membership is checked live on every read.
     Storage::disk('minio')->assertExists($attachment->storage_path);
     $this->actingAs($bob)->get($url)->assertForbidden();
 });

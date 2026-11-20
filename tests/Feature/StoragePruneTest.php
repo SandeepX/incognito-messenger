@@ -46,7 +46,6 @@ it('prunes orphaned minio objects safely', function () {
     $this->artisan('storage:prune-orphaned-files', ['--dry-run' => true])
         ->expectsOutputToContain('orphan.png');
 
-    // Dry run leaves everything alone.
     Storage::disk('minio')->assertExists('avatars/orphan.png');
     Storage::disk('minio')->assertExists('conversations/1/images/orphan.png');
 

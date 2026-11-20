@@ -12,11 +12,6 @@ use Illuminate\Support\Facades\DB;
 
 class PresenceController extends Controller
 {
-    /**
-     * Presence for everyone the caller is allowed to see: accepted friends
-     * plus participants of normal conversations. Pending message requests
-     * are deliberately excluded.
-     */
     public function index(): JsonResponse
     {
         $me = auth()->user()->loadMissing('profile');
@@ -34,13 +29,11 @@ class PresenceController extends Controller
         return response()->json($users);
     }
 
-    /** Called on socket connect and every 30 seconds while the page is open. */
     public function heartbeat(): JsonResponse
     {
         return $this->touch(true);
     }
 
-    /** Called via sendBeacon when the page/socket goes away. */
     public function disconnect(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -67,7 +60,6 @@ class PresenceController extends Controller
         ]);
     }
 
-    /** @return array<int, int> */
     private function audience(User $user): array
     {
         $conversationIds = DB::table('conversation_participants')

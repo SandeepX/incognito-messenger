@@ -622,7 +622,6 @@
             img.onerror = null;
         };
         if (isCustomAvatarUrl(url)) {
-            // Show initial while the uploaded/photo URL loads, then swap without layout shift.
             if (img.src !== fallbackSrc) img.src = fallbackSrc;
             const next = String(url);
             const pre = new Image();
@@ -933,7 +932,6 @@
         }
     }
 
-    // Notifications
     function updateSoundControls() {
         const enabled = getSwitch('message-sounds-switch');
         $('#message-volume').disabled = !enabled;
@@ -1019,7 +1017,6 @@
         await saveNotificationPrefs(true);
     }
 
-    // Calls
     function secureCallContext() {
         return window.isSecureContext
             || location.hostname === 'localhost'
@@ -1187,7 +1184,6 @@
         }
     }
 
-    // Avatar crop
     function openCrop(file) {
         if (!avatarAllowed.includes(file.type)) {
             $('#avatar-error').textContent = 'Choose a JPEG, PNG, GIF, or WebP image.';
@@ -1350,7 +1346,6 @@
         }
     }
 
-    // Blocked users
     function renderBlockedUsers() {
         const list = $('#blocked-users-list');
         if (!state.blocked || !state.blocked.length) {
@@ -1385,7 +1380,6 @@
         }
     }
 
-    // Sessions
     function renderSessions() {
         const list = $('#sessions-list');
         if (!state.sessions || !state.sessions.length) {
@@ -1428,7 +1422,6 @@
         }
     }
 
-    // Password
     function passwordStrength(pw) {
         let score = 0;
         if (!pw) return { label: '', width: '0%', color: 'transparent' };
@@ -1575,7 +1568,6 @@
         $('#desktop-notifications-switch').addEventListener('click', toggleDesktopNotifications);
         $('#desktop-notifications-switch').addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); $('#desktop-notifications-switch').click(); } });
 
-        // Calls
         if (!secureCallContext()) $('#call-https-warning').style.display = 'block';
         refreshCallDevices();
         navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshCallDevices());

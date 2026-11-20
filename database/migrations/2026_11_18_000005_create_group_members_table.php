@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('group_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('role', 10)->default('member'); // admin | member
+            $table->string('role', 10)->default('member');
             $table->timestamps();
 
             $table->unique(['group_id', 'user_id']);
